@@ -1,10 +1,14 @@
+(*
+  File:     Hermite_Lindemann.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>The Hermite--Lindemann Transcendence Theorem\<close>
 theory Hermite_Lindemann
-  imports Pi_Transcendental.Pi_Transcendental Algebraic_Numbers.Algebraic_Numbers
-(*
-"Polynomial_Factorization.Square_Free_Factorization"
-"Power_Sum_Polynomials.Power_Sum_Polynomials_Library"
-*)
+imports 
+  Pi_Transcendental.Pi_Transcendental
+  Algebraic_Numbers.Algebraic_Numbers
+  "Power_Sum_Polynomials.Power_Sum_Polynomials_Library"
+(*"Polynomial_Factorization.Square_Free_Factorization"*)
 begin
 
 subsection \<open>Auxiliary facts about univariate polynomials\<close>
@@ -1901,9 +1905,9 @@ qed
 lemma Hermite_Lindemann_aux2:
   fixes \<alpha> :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
   assumes [intro]: "finite X"
-  assumes \<beta>_nz: "\<And>x. x \<in> X \<Longrightarrow> \<beta> x \<noteq> 0"
+  assumes nz:   "\<And>x. x \<in> X \<Longrightarrow> \<beta> x \<noteq> 0"
   assumes alg:  "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
-  assumes "(\<Sum>\<alpha>\<in>X. of_int (\<beta> x) * exp \<alpha>) = 0"
+  assumes sum0: "(\<Sum>\<alpha>\<in>X. of_int (\<beta> x) * exp \<alpha>) = 0"
   shows   "X = {}"
 proof (rule ccontr)
   assume "X \<noteq> {}"
@@ -1914,9 +1918,9 @@ qed
 theorem Hermite_Lindemann:
   fixes c:: "complex \<Rightarrow> complex"
   assumes [intro]: "finite X"
-  assumes \<alpha>: "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
-  assumes \<beta>: "\<And>x. x \<in> X \<Longrightarrow> algebraic (c x)"
-  assumes "(\<Sum>x\<in>X. c x * exp \<alpha>) = 0"
+  assumes alg1: "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
+  assumes alg2: "\<And>x. x \<in> X \<Longrightarrow> algebraic (c x)"
+  assumes sum0: "(\<Sum>x\<in>X. c x * exp \<alpha>) = 0"
   shows   "\<forall>x\<in>X. c x = 0"
   sorry
 
