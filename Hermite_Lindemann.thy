@@ -707,6 +707,10 @@ proof -
     using * by (auto simp: min_int_poly_def)
 qed
 
+lemma ipoly_min_int_poly [simp]: 
+  "algebraic x \<Longrightarrow> ipoly (min_int_poly x) (x :: 'a :: {field_gcd, field_char_0}) = 0"
+  using min_int_poly_represents[of x] by (auto simp: represents_def)
+
 lemma min_int_poly_nonzero [simp]:
   fixes x :: "'a :: {field_char_0, field_gcd}"
   shows "min_int_poly x \<noteq> 0"
@@ -1915,15 +1919,97 @@ proof
     by simp
 qed
 
+lemma finite_multisets_of_size:
+  assumes "finite A"
+  shows   "finite {X. size X = n \<and> set_mset X \<subseteq> A}"
+  sorry
+
 lemma Hermite_Lindemann_aux2:
-  fixes \<alpha> :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
-  assumes [intro]: "finite X"
+  fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
+  assumes "finite X"
   assumes nz:   "\<And>x. x \<in> X \<Longrightarrow> \<beta> x \<noteq> 0"
   assumes alg:  "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
-  assumes sum0: "(\<Sum>\<alpha>\<in>X. of_int (\<beta> x) * exp \<alpha>) = 0"
+  assumes sum0: "(\<Sum>x\<in>X. of_int (\<beta> x) * exp x) = 0"
   shows   "X = {}"
 proof (rule ccontr)
   assume "X \<noteq> {}"
+  note [intro] = \<open>finite X\<close>
+
+  define P :: "int poly" where "P = \<Prod>(min_int_poly ` X)"
+  define Roots :: "complex set" where "Roots = {x. ipoly P x = 0}"
+  have [simp]: "P \<noteq> 0"
+    using \<open>finite X\<close> by (auto simp: P_def)
+  have [intro]: "finite Roots"
+    unfolding Roots_def by (intro poly_roots_finite) auto
+
+  define n where "n = card Roots"
+  obtain Root where Root: "bij_betw Root {..<n} Roots"
+    using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
+
+  have "X \<subseteq> Roots"
+  proof safe
+    fix x assume "x \<in> X"
+    hence "ipoly (min_int_poly x) x = 0"
+      by (intro ipoly_min_int_poly alg)
+    thus "x :  Roots"
+      using \<open>finite X\<close> \<open>x \<in> X\<close>
+      by (auto simp: Roots_def P_def of_int_poly_hom.hom_prod poly_prod)
+  qed
+
+  define \<beta>' where "\<beta>' = (\<lambda>x. if x \<in> X then \<beta> x else 0)"
+
+  define perms where "perms = {\<pi>. \<pi> permutes Roots}"
+  have [intro]: "finite perms"
+    unfolding perms_def by (rule finite_permutations) auto
+
+  have [simp]: "card perms = fact n"
+    unfolding perms_def n_def by (intro card_permutations) auto
+  define Roots_ms :: "complex multiset set" where
+    "Roots_ms = {X. size X = fact n \<and> set_mset X \<subseteq> Roots}"
+  have [intro]: "finite Roots_ms"
+    unfolding Roots_ms_def by (rule finite_multisets_of_size) auto
+  define tuples :: "complex multiset \<Rightarrow> ((complex \<Rightarrow> complex) \<Rightarrow> complex) set" where
+    "tuples = (\<lambda>X. {f\<in>perms \<rightarrow>\<^sub>E Roots. image_mset f (mset_set perms) = X})"
+  have [intro]: "finite (tuples X)" for X
+    unfolding tuples_def by (rule finite_subset[of _ "perms \<rightarrow>\<^sub>E Roots", OF _ finite_PiE]) auto
+  define tuples' :: "(complex multiset \<times> ((complex \<Rightarrow> complex) \<Rightarrow> complex)) set" where
+    "tuples' = (SIGMA X:Roots_ms. tuples X)"
+
+  have "0 = (\<Sum>x\<in>X. \<beta> x * exp x)"
+    using sum0 ..
+  also have "\<dots> = (\<Sum>x\<in>Roots. \<beta>' x * exp x)"
+    by (intro sum.mono_neutral_cong_left \<open>X \<subseteq> Roots\<close>) (auto simp: \<beta>'_def)
+  also have "\<dots> dvd (\<Prod>\<sigma>\<in>perms. \<Sum>x\<in>Roots. \<beta>' x * exp (\<sigma> x))"
+    by (rule dvd_prodI[OF \<open>finite perms\<close>])
+       (use permutes_id[of Roots] in \<open>simp_all add: id_def perms_def\<close>)
+  also have "\<dots> = (\<Sum>f\<in>perms \<rightarrow>\<^sub>E Roots. \<Prod>\<sigma>\<in>perms. \<beta>' (f \<sigma>) * exp (\<sigma> (f \<sigma>)))"
+    by (rule prod_sum_PiE) auto
+  also have "\<dots> = (\<Sum>f\<in>perms \<rightarrow>\<^sub>E Roots. (\<Prod>\<sigma>\<in>perms. \<beta>' (f \<sigma>)) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)))"
+    using \<open>finite perms\<close> by (simp add: prod.distrib exp_sum)
+  also have "\<dots> = (\<Sum>(X,f)\<in>tuples'. (\<Prod>\<sigma>\<in>perms. \<beta>' (f \<sigma>)) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)))"
+    using \<open>finite perms\<close>
+    by (intro sum.reindex_bij_witness[of _ snd "\<lambda>f. (image_mset f (mset_set perms), f)"])
+       (auto simp: tuples'_def tuples_def Roots_ms_def PiE_def Pi_def)
+  also have "\<dots> = (\<Sum>(X,f)\<in>tuples'. (\<Prod>x\<in>#X. \<beta>' x) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)))"
+  proof (safe intro!: sum.cong)
+    fix X :: "complex multiset" and f :: "(complex \<Rightarrow> complex) \<Rightarrow> complex"
+    assume "(X, f) \<in> tuples'"
+    hence X: "X \<in> Roots_ms" "X = image_mset f (mset_set perms)" and f: "f \<in> perms \<rightarrow>\<^sub>E Roots"
+      by (auto simp: tuples'_def tuples_def)
+    have "(\<Prod>\<sigma>\<in>perms. \<beta>' (f \<sigma>)) = (\<Prod>\<sigma>\<in>#mset_set perms. \<beta>' (f \<sigma>))"
+      by (meson prod_unfold_prod_mset)
+    also have "\<dots> = (\<Prod>x\<in>#X. \<beta>' x)"
+      unfolding X(2) by (simp add: multiset.map_comp o_def)
+    finally show "(\<Prod>\<sigma>\<in>perms. \<beta>' (f \<sigma>)) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) =
+                  (\<Prod>x\<in>#X. \<beta>' x) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>))" by simp
+  qed
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. \<Sum>f\<in>tuples X. (\<Prod>x\<in>#X. \<beta>' x) * exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)))"
+    unfolding tuples'_def by (intro sum.Sigma [symmetric]) auto
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. of_int (\<Prod>x\<in>#X. \<beta>' x) * (\<Sum>f\<in>tuples X. exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>))))"
+    by (simp add: sum_distrib_left)
+  
+  
+
   show False
     sorry
 qed
