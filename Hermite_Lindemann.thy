@@ -953,17 +953,23 @@ qed
 
 subsection \<open>Main proof\<close>
 
+text \<open>
+  Following Baker, We first prove the following special form of the theorem:
+  Let $m > 0$ and $q_1, \ldots, q_m \in\mathbb{Z}[X]$ be irreducible, non-constant,
+  and pairwise coprime polynomials. Let $\beta_1, \ldots, \beta_m$ be non-zero integers. Then
+  \[\sum_{i=1}^m \beta_i \sum_{q_i(\alpha) = 0} e^\alpha \neq 0\]
+\<close>
 lemma Hermite_Lindemann_aux1:
-  fixes \<beta> :: "int poly \<Rightarrow> int"
-  fixes P :: "int poly set"
-  assumes [intro]: "finite P" and "P \<noteq> {}"
+  fixes P :: "int poly set" and \<beta> :: "int poly \<Rightarrow> int"
+  assumes "finite P" and "P \<noteq> {}"
   assumes distinct: "pairwise Rings.coprime P"
-  assumes squarefree: "\<And>p. p \<in> P \<Longrightarrow> rsquarefree (of_int_poly p :: complex poly)"
+  assumes irred: "\<And>p. p \<in> P \<Longrightarrow> irreducible p"
   assumes nonconstant: "\<And>p. p \<in> P \<Longrightarrow> Polynomial.degree p > 0"
   assumes \<beta>_nz: "\<And>p. p \<in> P \<Longrightarrow> \<beta> p \<noteq> 0"
   defines "Roots \<equiv> (\<lambda>p. {\<alpha>::complex. poly (of_int_poly p) \<alpha> = 0})"
   shows   "(\<Sum>p\<in>P. of_int (\<beta> p) * (\<Sum>\<alpha>\<in>Roots p. exp \<alpha>)) \<noteq> 0"
 proof
+  note [intro] = \<open>finite P\<close>
   assume sum_eq_0: "(\<Sum>p\<in>P. of_int (\<beta> p) * (\<Sum>\<alpha>\<in>Roots p. exp \<alpha>)) = 0"
 
   define Roots' where "Roots' = (\<Union>p\<in>P. Roots p)"
@@ -976,6 +982,15 @@ proof
   have [simp]: "p \<noteq> 0" if "p \<in> P" for p
     using that by auto
 
+  text \<open>
+    The polynomials in \<^term>\<open>P\<close> do not have multiple roots:
+  \<close>
+  have rsquarefree: "rsquarefree (of_int_poly q :: complex poly)" if "q \<in> P" for q
+    by (rule irreducible_imp_rsquarefree_of_int_poly) (use that in \<open>auto intro: irred nonconstant\<close>)
+
+  text \<open>
+    No two different polynomials in \<^term>\<open>P\<close> have roots in common:
+  \<close>
   have disjoint: "disjoint_family_on Roots P"
     using distinct
   proof (rule pairwise_imp_disjoint_family_on)
@@ -999,16 +1014,18 @@ proof
     using Roots_nonempty \<open>P \<noteq> {}\<close> by (auto simp: Roots'_def)
   have "n > 0"
     using \<open>Roots' \<noteq> {}\<close> \<open>finite Roots'\<close> by (auto simp: n_altdef)
+
+  text \<open>
+    We can split each polynomial in \<open>P\<close> into a product of linear factors:
+  \<close>
   have of_int_poly_P:
      "of_int_poly q = Polynomial.smult (Polynomial.lead_coeff q) (\<Prod>x\<in>Roots q. [:-x, 1:])"
      if "q \<in> P" for q
-    using complex_poly_decompose_rsquarefree[OF squarefree[OF that]] by (simp add: Roots_def)
+    using complex_poly_decompose_rsquarefree[OF rsquarefree[OF that]] by (simp add: Roots_def)
 
-  obtain Root where Root_bij: "bij_betw Root {..<n} Roots'"
-    using ex_bij_betw_nat_finite[OF \<open>finite Roots'\<close>] unfolding n_altdef atLeast0LessThan by metis
-  have Root_in_Roots': "Root i \<in> Roots'" if "i < n" for i
-    using Root_bij that by (auto simp: bij_betw_def)
-
+  text \<open>
+    We let \<open>l\<close> be an integer such that $l\alpha$ is an algebraic integer for all our roots \<open>\<alpha>\<close>:
+  \<close>
   define l where "l = (LCM q\<in>P. Polynomial.lead_coeff q)"
   have alg_int: "algebraic_int (of_int l * x)" if "x \<in> Roots'" for x
   proof -
@@ -1023,6 +1040,9 @@ proof
     unfolding l_def by (rule Lcm_int_greater_eq_0)
   ultimately have "l > 0" by linarith
 
+  text \<open>
+    We can split the product of all the polynomials in \<open>P\<close> into linear factors:
+  \<close>
   define lc_factor where "lc_factor = (\<Prod>q\<in>P. l ^ Polynomial.degree q div Polynomial.lead_coeff q)"
   have lc_factor: "Polynomial.smult (of_int l ^ n) (\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>',1:]) =
                       of_int_poly (Polynomial.smult lc_factor (\<Prod>P))"
@@ -1054,7 +1074,7 @@ proof
     also have "(\<Sum>q\<in>P. d q) = (\<Sum>q\<in>P. n_roots q)"
     proof (intro sum.cong, goal_cases)
       case (2 q)
-      thus ?case using squarefree[OF 2]
+      thus ?case using rsquarefree[OF 2]
         by (subst (asm) rsquarefree_card_degree) (auto simp: d_def n_roots_def Roots_def)
     qed auto
     also have "\<dots> = n"
@@ -1063,6 +1083,10 @@ proof
       by (simp add: of_int_hom.map_poly_hom_smult of_int_poly_hom.hom_prod)
   qed
 
+  text \<open>
+    We define \<open>R\<close> to be the radius of the smallest circle around the origin in which all our
+    roots lie:
+  \<close>
   define R :: real where "R = Max (norm ` Roots')"
   have R_ge: "R \<ge> norm \<alpha>" if "\<alpha> \<in> Roots'" for \<alpha>
     unfolding R_def using that by (intro Max_ge) auto
@@ -1078,7 +1102,11 @@ proof
       by simp
   qed
 
-  define C :: "nat \<Rightarrow> real" where "C = (\<lambda>p. \<bar>real_of_int l\<bar> ^ (n * p) * (2*R) ^ (p * n - 1))"
+  text \<open>
+    Now the main part of the proof: for any sufficiently large prime \<open>p\<close>, our assumptions
+    imply $(p-1)! ^ n \leq C' l^{np} (2R)^{np-1}$ for some constant $C'$:    
+  \<close>
+  define C :: "nat \<Rightarrow> real" where "C = (\<lambda>p. l ^ (n * p) * (2*R) ^ (n * p - 1))"
   define C' where
     "C' = (\<Prod>x\<in>Roots'. \<Sum>q\<in>P. real_of_int \<bar>\<beta> q\<bar> * (\<Sum>\<alpha>\<in>Roots q. cmod \<alpha> * exp (cmod \<alpha>)))"
 
@@ -1091,44 +1119,23 @@ proof
     have "p > 1"
       using prime_gt_1_nat[OF p] .
 
-    have prod_eq: "(\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) * [:-\<alpha>, 1:] =
-                   (\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^p)" if "\<alpha> \<in> Roots'" for \<alpha>
-    proof -
-      have "(\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) =
-            (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) * [:-\<alpha>, 1:] ^ (p - 1)"
-        by (subst prod.remove[OF _ that]) auto
-      also have "(\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) =
-                 (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^p)"
-        by (intro prod.cong) auto
-      also have "\<dots> * [:-\<alpha>, 1:] ^ (p - 1) * [:-\<alpha>, 1:] =
-                 (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^p) * [:-\<alpha>, 1:] ^ p"
-        unfolding mult.assoc power_Suc2 [symmetric]
-        by (use prime_gt_0_nat[OF p] in \<open>simp add: Suc_diff_Suc del: power_Suc\<close>)
-      also have "\<dots> = (\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^p)"
-        by (subst prod.remove[OF _ that]) auto
-      finally show ?thesis .
-    qed
-  
     define f_poly :: "complex \<Rightarrow> complex poly" where
       "f_poly = (\<lambda>\<alpha>. Polynomial.smult (l^(n*p)) ((\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^p) div [:-\<alpha>, 1:]))"
     have f_poly_altdef: "f_poly \<alpha> = Polynomial.smult (l^(n*p))
                            ((\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)))"
       if "\<alpha> \<in> Roots'" for \<alpha>
     proof -
-      have "(\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) =
-            (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) * [:-\<alpha>, 1:] ^ (p - 1)"
-        by (subst prod.remove[OF _ that]) auto
-      also have "(\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^(if \<alpha>' = \<alpha> then p - 1 else p)) =
-                 (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^p)"
-        by (intro prod.cong) auto
-      also have "\<dots> * [:-\<alpha>, 1:] ^ (p - 1) * [:-\<alpha>, 1:] =
-                 (\<Prod>\<alpha>'\<in>Roots'-{\<alpha>}. [:-\<alpha>', 1:]^p) * [:-\<alpha>, 1:] ^ p"
-        unfolding mult.assoc power_Suc2 [symmetric]
-        by (use prime_gt_0_nat[OF p] in \<open>simp add: Suc_diff_Suc del: power_Suc\<close>)
-      also have "\<dots> = (\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^p)"
-        by (subst prod.remove[OF _ that]) auto
+      have "(\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:] ^ (if \<alpha>'=\<alpha> then p-1 else p)) * [:-\<alpha>, 1:] =
+            [:- \<alpha>, 1:] ^ (p - 1) * (\<Prod>x\<in>Roots' - {\<alpha>}. [:- x, 1:] ^ p) * [:- \<alpha>, 1:]"
+        using that by (subst prod.If_eq) (auto simp: algebra_simps)
+      also have "\<dots> = (\<Prod>x\<in>Roots' - {\<alpha>}. [:- x, 1:] ^ p) * [:- \<alpha>, 1:] ^ Suc (p - 1)"
+        by (simp only: power_Suc mult_ac)
+      also have "Suc (p - 1) = p"
+        using \<open>p > 1\<close> by auto
+      also have "(\<Prod>x\<in>Roots' - {\<alpha>}. [:- x, 1:] ^ p) * [:- \<alpha>, 1:] ^ p = (\<Prod>x\<in>Roots'. [:- x, 1:] ^ p)"
+        using that by (subst prod.remove[of _ \<alpha>]) auto
       finally have eq: "(\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:] ^ (if \<alpha>'=\<alpha> then p-1 else p)) * [:-\<alpha>, 1:] =
-                        (\<Prod>\<alpha>'\<in>Roots'. [:- \<alpha>', 1:] ^ p)" .
+                        (\<Prod>x\<in>Roots'. [:- x, 1:] ^ p)" .
       show ?thesis
         unfolding f_poly_def eq[symmetric] by (subst nonzero_mult_div_cancel_right) auto
     qed
@@ -1139,15 +1146,11 @@ proof
       using that by (simp add: f_poly_altdef poly_prod f_def)
     have deg_f: "Polynomial.degree (f_poly \<alpha>) = n * p - 1" if "\<alpha> \<in> Roots'" for \<alpha>
     proof -
-      have "Polynomial.degree (f_poly \<alpha>) = (\<Sum>x\<in>Roots'. if x = \<alpha> then p - 1 else p)"
-        using that \<open>l > 0\<close> by (simp add: f_poly_altdef degree_prod_eq degree_power_eq)
-      also have "\<dots> = (\<Sum>x\<in>Roots'-{\<alpha>}. if x = \<alpha> then p - 1 else p) + (p - 1)"
-        using that by (subst sum.remove[of _ \<alpha>]) auto
-      also have "(\<Sum>x\<in>Roots'-{\<alpha>}. if x = \<alpha> then p - 1 else p) = (\<Sum>x\<in>Roots'-{\<alpha>}.p)"
-        by (intro sum.cong) auto
-      also have "\<dots> + (p - 1) = n * p - 1"
-        using that \<open>finite Roots'\<close> \<open>n > 0\<close> \<open>p > 1\<close>
-        by (simp add: algebra_simps n_altdef card_Diff_subset)
+      have "Polynomial.degree (f_poly \<alpha>) = p - 1 + (n - 1) * p"
+        unfolding f_poly_altdef[OF that] using that \<open>l > 0\<close> \<open>finite Roots'\<close>
+        by (subst prod.If_eq) (auto simp: degree_prod_eq degree_power_eq degree_mult_eq n_altdef)
+      also have "p - 1 + (n - 1) * p = n * p - 1"
+        using \<open>n > 0\<close> \<open>p > 1\<close> by (cases n) auto
       finally show ?thesis .
     qed
     
@@ -1242,6 +1245,11 @@ proof
 
         have "(\<Prod>\<alpha>'\<in>Roots'. r \<alpha>') \<in> \<rat>"
         proof -
+          obtain Root where Root_bij: "bij_betw Root {..<n} Roots'"
+            using ex_bij_betw_nat_finite[OF \<open>finite Roots'\<close>] unfolding n_altdef atLeast0LessThan by metis
+          have Root_in_Roots': "Root i \<in> Roots'" if "i < n" for i
+            using Root_bij that by (auto simp: bij_betw_def)
+
           define R :: "complex mpoly" where
             "R = (\<Prod>i<n. Const (of_int (l^n)) * (\<Prod>j\<in>{..<n}-{i}. Var i - Var j))"
           have "insertion Root R \<in> \<rat>"
@@ -1804,11 +1812,11 @@ proof
                 unfolding power_mult power_mult_distrib power_add by (simp add: mult_ac)
               also have "(p-1)+p*(n-1) = p*n - 1"
                 using \<open>n > 0\<close> \<open>p > 1\<close> by (cases n) (auto simp: algebra_simps)
-              also have "2 ^ (p * n - 1) * R ^ (p * n - 1) = (2*R)^(p*n-1)"
-                unfolding power_mult_distrib ..
+              also have "2 ^ (p * n - 1) * R ^ (p * n - 1) = (2*R)^(n * p-1)"
+                unfolding power_mult_distrib by (simp add: mult_ac)
               finally show "norm (poly (f_poly x) t) \<le> C p"
-                unfolding C_def .
-            qed (use \<open>R \<ge> 0\<close> in \<open>auto simp: C_def\<close>)
+                unfolding C_def using \<open>l > 0\<close> by simp
+            qed (use \<open>R \<ge> 0\<close> \<open>l > 0\<close> in \<open>auto simp: C_def\<close>)
           qed auto
         qed
       qed auto
@@ -1820,6 +1828,11 @@ proof
     finally show "fact (p - 1) ^ n \<le> C' * C p ^ n" .
   qed
 
+  text \<open>
+    Some simple asymptotic estimates show that this is clearly a contradiction, since
+    the left-hand side grows much faster than the right-hand side and there are infinitely many
+    sufficiently large primes:
+  \<close>
   have freq: "frequently prime sequentially"
     using frequently_prime_cofinite unfolding cofinite_eq_sequentially .
   have ev: "eventually (\<lambda>p. (\<forall>q\<in>P.  int p > \<bar>\<beta> q\<bar>) \<and>
@@ -1830,7 +1843,7 @@ proof
   have "frequently (\<lambda>p. fact (p - 1) ^ n \<le> C' * C p ^ n) sequentially"
     by (rule frequently_eventually_mono[OF freq ev]) (use ineq in blast)
   moreover have "eventually (\<lambda>p. fact (p - 1) ^ n > C' * C p ^ n) sequentially"
-  proof (cases "R = 0 \<or> l = 0")
+  proof (cases "R = 0")
     case True
     have "eventually (\<lambda>p. p * n > 1) at_top"
       using \<open>n > 0\<close> by real_asymp
@@ -1838,36 +1851,36 @@ proof
       by eventually_elim (use \<open>n > 0\<close> True in \<open>auto simp: C_def power_0_left mult_ac\<close>)
   next
     case False
-    hence "R > 0" "\<bar>real_of_int l\<bar> > 0"
+    hence "R > 0"
       using \<open>R \<ge> 0\<close> by auto
     define D :: real where "D = (2 * R * \<bar>real_of_int l\<bar>) ^ n" 
     have "D > 0"
-      using \<open>R > 0\<close> \<open>\<bar>real_of_int l\<bar> > 0\<close> unfolding D_def by (intro zero_less_power) auto
+      using \<open>R > 0\<close> \<open>l > 0\<close> unfolding D_def by (intro zero_less_power) auto
 
     have "(\<lambda>p. C' * C p ^ n) \<in> O(\<lambda>p. C p ^ n)"
       by simp
-    also have "(\<lambda>p. C p ^ n) \<in> O(\<lambda>p. ((2 * R * \<bar>of_int l\<bar>) ^ (n * p)) ^ n)"
+    also have "(\<lambda>p. C p ^ n) \<in> O(\<lambda>p. ((2 * R * l) ^ (n * p)) ^ n)"
     proof (rule landau_o.big_power[OF bigthetaD1])
       have np: "eventually (\<lambda>p::nat. n * p > 1) at_top"
         using \<open>n > 0\<close> by real_asymp
-      have "eventually (\<lambda>p. (2 * R) * C p = (2 * R * \<bar>real_of_int l\<bar>) ^ (n * p)) at_top"
+      have "eventually (\<lambda>p. (2 * R) * C p = (2 * R * l) ^ (n * p)) at_top"
         using np
       proof eventually_elim
         case (elim p)
-        have "2 * R * C p = \<bar>of_int l\<bar> ^ (n * p) * (2 * R) ^ (Suc (n * p - 1))"
+        have "2 * R * C p = l ^ (n * p) * (2 * R) ^ (Suc (n * p - 1))"
           by (simp add: C_def algebra_simps)
         also have "Suc (n * p - 1) = n * p"
           using elim by auto
         finally show ?case
           by (simp add: algebra_simps)
       qed
-      hence "(\<lambda>p. (2 * R) * C p) \<in> \<Theta>(\<lambda>p. (2 * R * \<bar>of_int l\<bar>) ^ (n * p))"
+      hence "(\<lambda>p. (2 * R) * C p) \<in> \<Theta>(\<lambda>p. (2 * R * l) ^ (n * p))"
         by (intro bigthetaI_cong)
-      thus "C \<in> \<Theta>(\<lambda>p. (2 * R * \<bar>real_of_int l\<bar>) ^ (n * p))"
+      thus "C \<in> \<Theta>(\<lambda>p. (2 * R * l) ^ (n * p))"
         using \<open>R > 0\<close> by simp
     qed
     also have "\<dots> = O(\<lambda>p. (D ^ p) ^ n)"
-      by (simp flip: power_mult add: power2_eq_square mult_ac D_def)
+      using \<open>l > 0\<close> by (simp flip: power_mult add: power2_eq_square mult_ac D_def)
     also have "(\<lambda>p. (D ^ p) ^ n) \<in> o(\<lambda>p. fact (p - 1) ^ n)"
     proof (intro landau_o.small_power)
       have "eventually (\<lambda>p. D ^ p = D * D ^ (p - 1)) at_top"
