@@ -11,6 +11,16 @@ imports
 (*"Polynomial_Factorization.Square_Free_Factorization"*)
 begin
 
+lemma bij_betw_permutes_compose_left:
+  assumes "\<pi> permutes A"
+  shows   "bij_betw (\<lambda>\<sigma>. \<pi> \<circ> \<sigma>) {\<sigma>. \<sigma> permutes A} {\<sigma>. \<sigma> permutes A}"
+proof (rule bij_betwI)
+  show "(\<circ>) \<pi> \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
+    by (auto intro: permutes_compose assms)
+  show "(\<circ>) (inv_into UNIV \<pi>) \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
+    by (auto intro: permutes_compose assms permutes_inv)
+qed (use permutes_inverses[OF assms] in auto)
+
 subsection \<open>The lexicographic ordering on complex numbers\<close>
 
 definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
@@ -62,6 +72,21 @@ qed
 
 
 subsection \<open>Auxiliary facts about univariate polynomials\<close>
+
+
+lemma rat_to_normalized_int_poly_exists:
+  fixes p :: "rat poly"
+  assumes "p \<noteq> 0"
+  obtains q lc where "p = Polynomial.smult lc (of_int_poly q)" "lc > 0" "content q = 1"
+proof -
+  define lc where "lc = fst (rat_to_normalized_int_poly p)"
+  define q where "q = snd (rat_to_normalized_int_poly p)"
+  have eq: "rat_to_normalized_int_poly p = (lc, q)"
+    by (simp add: lc_def q_def)
+  show ?thesis
+    using rat_to_normalized_int_poly[OF eq] assms
+    by (intro that[of lc q]) auto
+qed
 
 lemma irreducible_imp_squarefree:
   assumes "irreducible p"
@@ -216,6 +241,20 @@ proof -
     with assms have False by simp
   }
   thus ?thesis by (auto simp: rsquarefree_roots)
+qed
+
+lemma squarefree_of_int_polyI:
+  assumes "squarefree p" "content p = 1"
+  shows   "squarefree (of_int_poly p :: 'a :: {field_char_0,field_gcd} poly)"
+proof -
+  have "Rings.coprime p (pderiv p)"
+    by (rule squarefree_imp_coprime_pderiv) fact+
+  hence "Rings.coprime (of_int_poly p :: 'a poly) (of_int_poly (pderiv p))"
+    by (rule coprime_of_int_polyI)
+  also have "of_int_poly (pderiv p) = pderiv (of_int_poly p :: 'a poly)"
+    by (simp add: of_int_hom.map_poly_pderiv)
+  finally show ?thesis
+    using coprime_pderiv_imp_squarefree by blast
 qed
 
 lemma higher_pderiv_pcompose_linear:
@@ -846,6 +885,37 @@ proof -
     using * by (auto simp: min_int_poly_def)
 qed
 
+lemma 
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows degree_min_int_poly_pos [intro]: "Polynomial.degree (min_int_poly x) > 0"
+    and degree_min_int_poly_nonzero [simp]: "Polynomial.degree (min_int_poly x) \<noteq> 0"
+proof -
+  show "Polynomial.degree (min_int_poly x) > 0"
+  proof (cases "algebraic x")
+    case True
+    hence "min_int_poly x represents x"
+      by auto
+    thus ?thesis by blast
+  qed (auto simp: min_int_poly_def)
+  thus "Polynomial.degree (min_int_poly x) \<noteq> 0"
+    by blast
+qed
+
+lemma min_int_poly_squarefree [intro]:
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows "squarefree (min_int_poly x)"
+  by (rule irreducible_imp_squarefree) auto
+
+lemma min_int_poly_primitive [intro]:
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows "primitive (min_int_poly x)"
+  by (rule irreducible_imp_primitive) auto
+
+lemma min_int_poly_content [simp]:
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows "content (min_int_poly x) = 1"
+  using min_int_poly_primitive[of x] by (simp add: primitive_def)
+
 lemma ipoly_min_int_poly [simp]: 
   "algebraic x \<Longrightarrow> ipoly (min_int_poly x) (x :: 'a :: {field_gcd, field_char_0}) = 0"
   using min_int_poly_represents[of x] by (auto simp: represents_def)
@@ -855,11 +925,22 @@ lemma min_int_poly_nonzero [simp]:
   shows "min_int_poly x \<noteq> 0"
   using lead_coeff_min_int_poly_pos[of x] by auto
 
-lemma normalize_min_int_poly [simp]:
+lemma min_int_poly_normalize [simp]:
   fixes x :: "'a :: {field_char_0, field_gcd}"
   shows "normalize (min_int_poly x) = min_int_poly x"
   unfolding normalize_poly_def using lead_coeff_min_int_poly_pos[of x] by simp
-  
+
+lemma min_int_poly_prime_elem [intro]:
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows "prime_elem (min_int_poly x)"
+  using min_int_poly_irreducible[of x] by blast
+
+lemma min_int_poly_prime [intro]:
+  fixes x :: "'a :: {field_char_0, field_gcd}"
+  shows "prime (min_int_poly x)"
+  using min_int_poly_prime_elem[of x]
+  by (simp only: prime_normalize_iff [symmetric] min_int_poly_normalize)
+
 lemma min_int_poly_conv_Gcd:
   fixes x :: "'a :: {field_char_0, field_gcd}"
   assumes "algebraic x"
@@ -2162,14 +2243,73 @@ lemma sum_mset_image_mset_sum_mset_image_mset:
 lemma sum_mset_image_mset_singleton: "sum_mset (image_mset (\<lambda>x. {#f x#}) A) = image_mset f A"
   by (induction A) auto
 
+lemma sum_mset_conv_sum:
+  "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
+proof (induction A rule: full_multiset_induct)
+  case (less A)
+  show ?case
+  proof (cases "A = {#}")
+    case False
+    then obtain x where x: "x \<in># A"
+      by auto
+    define n where "n = count A x"
+    define A' where "A' = filter_mset (\<lambda>y. y \<noteq> x) A"
+    have A_eq: "A = replicate_mset n x + A'"
+      by (intro multiset_eqI) (auto simp: A'_def n_def)
+    have [simp]: "x \<notin># A'" "count A' x = 0"
+      by (auto simp: A'_def)
+    have "n \<noteq> 0"
+      using x by (auto simp: n_def)
+    
+    have "sum_mset (image_mset f A) = of_nat n * f x + sum_mset (image_mset f A')"
+      by (simp add: A_eq)
+    also have "A' \<subset># A"
+      unfolding A'_def using x by (simp add: filter_mset_eq_conv subset_mset_def)
+    with less.IH have "sum_mset (image_mset f A') = (\<Sum>x\<in>set_mset A'. of_nat (count A' x) * f x)"
+      by simp
+    also have "\<dots> = (\<Sum>x\<in>set_mset A'. of_nat (count A x) * f x)"
+      by (intro sum.cong) (auto simp: A_eq)
+    also have "of_nat n * f x + \<dots> = (\<Sum>x\<in>insert x (set_mset A'). of_nat (count A x) * f x)"
+      by (subst sum.insert) (auto simp: A_eq)
+    also from \<open>n \<noteq> 0\<close> have "insert x (set_mset A') = set_mset A"
+      by (auto simp: A_eq)
+    finally show ?thesis .
+  qed auto
+qed
+
 lemma sum_mset_conv_Sum_any:
   "sum_mset (image_mset f A) = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
-  sorry
+proof -
+  have "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
+    by (rule sum_mset_conv_sum)
+  also have "\<dots> = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
+  proof (rule Sum_any.expand_superset [symmetric])
+    show "{x. of_nat (count A x) * f x \<noteq> 0} \<subseteq> set_mset A"
+    proof
+      fix x assume "x \<in> {x. of_nat (count A x) * f x \<noteq> 0}"
+      hence "count A x \<noteq> 0"
+        by (intro notI) auto
+      thus "x \<in># A"
+        by auto
+    qed
+  qed auto
+  finally show ?thesis .
+qed
 
 lemma Sum_any_sum_swap:
-  assumes "finite A" "finite {x. sum (f x) A \<noteq> 0}"
+  assumes "finite A" "\<And>y. finite {x. f x y \<noteq> 0}"
   shows   "Sum_any (\<lambda>x. sum (f x) A) = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
-  sorry
+proof -
+  have "Sum_any (\<lambda>x. sum (f x) A) = Sum_any (\<lambda>x. Sum_any (\<lambda>y. f x y when y \<in> A))"
+    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
+  also have "\<dots> = Sum_any (\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A))"
+    by (intro Sum_any.swap[of "(\<Union>y\<in>A. {x. f x y \<noteq> 0}) \<times> A"] finite_SigmaI finite_UN_I assms) auto
+  also have "(\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A)) = (\<lambda>y. Sum_any (\<lambda>x. f x y) when y \<in> A)"
+    by (auto simp: when_def)
+  also have "Sum_any \<dots> = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
+    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
+  finally show ?thesis .
+qed
 
 lemma Hermite_Lindemann_aux2:
   fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
@@ -2207,7 +2347,9 @@ proof (rule ccontr)
   define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
     "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
   have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
-    sorry
+    using bij_betw_permutations[OF Root] unfolding convert_perm_def unRoot_def .
+  have permutes_convert_perm [intro]: "convert_perm \<sigma> permutes Roots" if "\<sigma> permutes {..<n}" for \<sigma>
+    using that bij_convert unfolding bij_betw_def by blast
   have convert_perm_compose: "convert_perm (\<pi> \<circ> \<sigma>) = convert_perm \<pi> \<circ> convert_perm \<sigma>"
     if "\<pi> permutes {..<n}" "\<sigma> permutes {..<n}" for \<sigma> \<pi>
   proof (intro ext)
@@ -2230,6 +2372,18 @@ proof (rule ccontr)
       by (auto simp: Roots_def P_def of_int_poly_hom.hom_prod poly_prod)
   qed
 
+  have "squarefree (of_int_poly P :: complex poly)"
+    unfolding P_def of_int_poly_hom.hom_prod
+  proof (rule squarefree_prod_coprime; safe)
+    fix x assume "x \<in> X"
+    thus "squarefree (of_int_poly (min_int_poly x) :: complex poly)"
+      by (intro squarefree_of_int_polyI) auto
+  next
+    fix x y assume xy: "x \<in> X" "y \<in> X" "min_int_poly x \<noteq> min_int_poly y"
+    thus "Rings.coprime (of_int_poly (min_int_poly x)) (of_int_poly (min_int_poly y) :: complex poly)"
+      by (intro coprime_of_int_polyI[OF primes_coprime]) auto
+  qed
+
   define \<beta>' where "\<beta>' = (\<lambda>x. if x \<in> X then \<beta> x else 0)"
 
   define perms where "perms = {\<pi>. \<pi> permutes Roots}"
@@ -2249,6 +2403,55 @@ proof (rule ccontr)
   define tuples' :: "(complex multiset \<times> ((complex \<Rightarrow> complex) \<Rightarrow> complex)) set" where
     "tuples' = (SIGMA X:Roots_ms. tuples X)"
 
+  have bij_convert': "bij_betw (\<lambda>f. f \<circ> (\<circ>) \<sigma>) (tuples X) (tuples X)"
+    if \<sigma>: "\<sigma> permutes Roots" for \<sigma> X
+  proof (rule bij_betwI)
+    have *: "(\<lambda>f. f \<circ> (\<circ>) \<sigma>) \<in> tuples X \<rightarrow> tuples X" if \<sigma>: "\<sigma> permutes Roots" for \<sigma>
+    proof
+      fix f assume f: "f \<in> tuples X"
+      show "f \<circ> (\<circ>) \<sigma> \<in> tuples X"
+        unfolding tuples_def
+      proof safe
+        fix \<sigma>'
+        assume \<sigma>': "\<sigma>' \<in> perms"
+        show "(f \<circ> (\<circ>) \<sigma>) \<sigma>' \<in> Roots"
+          using permutes_compose[OF _ \<sigma>, of \<sigma>'] \<sigma> \<sigma>' f by (auto simp: perms_def tuples_def)
+      next
+        fix \<sigma>'
+        assume \<sigma>': "\<sigma>' \<notin> perms"
+        have "\<not>(\<sigma> \<circ> \<sigma>') permutes Roots"
+        proof
+          assume "(\<sigma> \<circ> \<sigma>') permutes Roots"
+          hence "inv_into UNIV \<sigma> \<circ> (\<sigma> \<circ> \<sigma>') permutes Roots"
+            by (rule permutes_compose) (use permutes_inv[OF \<sigma>] in simp_all)
+          also have "inv_into UNIV \<sigma> \<circ> (\<sigma> \<circ> \<sigma>') = \<sigma>'"
+            by (auto simp: fun_eq_iff permutes_inverses[OF \<sigma>])
+          finally show False using \<sigma>' by (simp add: perms_def)
+        qed
+        thus "(f \<circ> (\<circ>) \<sigma>) \<sigma>' = undefined"
+          using f by (auto simp: perms_def tuples_def)
+      next
+        have "image_mset (f \<circ> (\<circ>) \<sigma>) (mset_set perms) =
+              image_mset f (image_mset ((\<circ>) \<sigma>) (mset_set perms))"
+          by (rule multiset.map_comp [symmetric])
+        also have "image_mset ((\<circ>) \<sigma>) (mset_set perms) = mset_set perms"
+          using bij_betw_permutes_compose_left[OF \<sigma>]
+          by (subst image_mset_mset_set) (auto simp: bij_betw_def perms_def)
+        also have "image_mset f \<dots> = X"
+          using f by (auto simp: tuples_def)
+        finally show "image_mset (f \<circ> (\<circ>) \<sigma>) (mset_set perms) = X" .
+      qed
+    qed
+
+    show "(\<lambda>f. f \<circ> (\<circ>) \<sigma>) \<in> tuples X \<rightarrow> tuples X"
+      by (rule *) fact
+    show "(\<lambda>f. f \<circ> (\<circ>) (inv_into UNIV \<sigma>)) \<in> tuples X \<rightarrow> tuples X"
+      by (intro * permutes_inv) fact
+    show "f \<circ> (\<circ>) \<sigma> \<circ> (\<circ>) (inv_into UNIV \<sigma>) = f" if "f \<in> tuples X" for f
+      by (auto simp: fun_eq_iff o_def permutes_inverses[OF \<sigma>])
+    show "f \<circ> (\<circ>) (inv_into UNIV \<sigma>) \<circ> (\<circ>) \<sigma> = f" if "f \<in> tuples X" for f
+      by (auto simp: fun_eq_iff o_def permutes_inverses[OF \<sigma>])
+  qed
 
   define R :: "complex multiset \<Rightarrow> complex multiset" where
     "R = (\<lambda>X. image_mset (\<lambda>f. \<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) (mset_set (tuples X)))"
@@ -2277,7 +2480,9 @@ proof (rule ccontr)
           unfolding Q_def
           by (intro allI ratpolys.coeff_prod_closed)
              (auto intro!: ratpolys.minus_closed ratpolys.sum_closed ratpolys.uminus_closed simp: coeff_Var mpoly_coeff_Const when_def)
+      next
         show "ring_homomorphism (\<lambda>x::complex. [:x:])" ..
+      next
         have "\<sigma> (unRoot (f (convert_perm \<sigma>))) < n" if "f \<in> tuples X" "\<sigma> permutes {..<n}" for f \<sigma>
         proof -
           have "convert_perm \<sigma> \<in> perms"
@@ -2291,6 +2496,7 @@ proof (rule ccontr)
           unfolding Q_def
           by (intro order.trans[OF vars_prod] UN_least order.trans[OF vars_sum]
                 order.trans[OF vars_diff] Un_least) (auto simp: vars_Var)
+      next
         define lc :: complex where "lc = of_int (Polynomial.lead_coeff P)"
         show "[:inverse lc:] \<in> ratpolys"
           by (auto simp: ratpolys_def coeff_pCons lc_def split: nat.splits)
@@ -2301,27 +2507,24 @@ proof (rule ccontr)
         thus "[:inverse lc:] * [:lc:] = 1"
           by auto
         have "rsquarefree (of_int_poly P :: complex poly)"
-          sorry
+          using \<open>squarefree (of_int_poly P :: complex poly)\<close> by (intro squarefree_imp_rsquarefree)
         hence "of_int_poly P = Polynomial.smult lc (\<Prod>x\<in>Roots. [:-x, 1:])"
           unfolding lc_def Roots_def of_int_hom.hom_lead_coeff[symmetric]
           by (rule complex_poly_decompose_rsquarefree [symmetric])
         also have "(\<Prod>x\<in>Roots. [:-x, 1:]) = (\<Prod>i<n. [:-Root i, 1:])"
           by (rule prod.reindex_bij_betw[OF Root, symmetric])
         finally show "of_int_poly P = Polynomial.smult lc (\<Prod>i<n. [:- Root i, 1:])" .
-
+      next
         show "symmetric_mpoly {..<n} Q"
           unfolding symmetric_mpoly_def
         proof safe
           fix \<pi> assume \<pi>: "\<pi> permutes {..<n}"
-          have bij_convert': "bij_betw (\<lambda>f. f \<circ> (\<circ>) (convert_perm \<pi>)) (tuples X) (tuples X)"
-            sorry
-
           have "mpoly_map_vars \<pi> Q = (\<Prod>f\<in>tuples X. Const (pCons 0 1) - (\<Sum> \<sigma> | \<sigma> permutes {..<n}.
                   Var ((\<pi> \<circ> \<sigma>) (unRoot (f (convert_perm \<sigma>))))))"
             by (simp add: Q_def permutes_bij[OF \<pi>])
           also have "\<dots> = (\<Prod>f\<in>tuples X. Const (pCons 0 1) - (\<Sum> \<sigma> | \<sigma> permutes {..<n}.
                   Var ((\<pi> \<circ> \<sigma>) (unRoot ((f \<circ> (\<lambda>\<sigma>. convert_perm \<pi> \<circ> \<sigma>)) (convert_perm \<sigma>))))))"
-            by (rule prod.reindex_bij_betw [OF bij_convert', symmetric])
+            using \<pi> by (intro prod.reindex_bij_betw [OF bij_convert', symmetric]) auto
           also have "\<dots> = Q"
             unfolding Q_def
           proof (rule prod.cong, goal_cases)
@@ -2359,16 +2562,21 @@ proof (rule ccontr)
         by auto
       then obtain Q2 :: "rat poly" where Q2: "Q1 = map_poly of_rat Q2"
         unfolding ratpolys_def using ratpolyE[of Q1] by blast
-      then obtain Q3 :: "int poly" and lc :: rat
-        where Q3: "Q2 = Polynomial.smult lc (of_int_poly Q3)" and "lc \<noteq> 0" and "content Q3 = 1"
-        sorry
+
+      have "Q1 \<noteq> 0"
+        unfolding Q1_def using fin_tuples[of X] by auto
+      with Q2 have "Q2 \<noteq> 0"
+        by auto
+      obtain Q3 :: "int poly" and lc :: rat
+        where Q3: "Q2 = Polynomial.smult lc (of_int_poly Q3)" and "lc > 0" and "content Q3 = 1"
+        using rat_to_normalized_int_poly_exists[OF \<open>Q2 \<noteq> 0\<close>] by metis
 
       have "poly_roots (of_int_poly Q3) = poly_roots (map_poly (of_rat \<circ> of_int) Q3)"
         by simp
       also have "map_poly (of_rat \<circ> of_int) Q3 = map_poly of_rat (map_poly of_int Q3)"
         by (subst map_poly_map_poly) auto
       also have "poly_roots \<dots> = poly_roots (Polynomial.smult (of_rat lc) \<dots>)"
-        using \<open>lc \<noteq> 0\<close> by simp
+        using \<open>lc > 0\<close> by simp
       also have "Polynomial.smult (of_rat lc) (map_poly of_rat (map_poly of_int Q3)) =
                  map_poly of_rat (Polynomial.smult lc (map_poly of_int Q3))"
         by (simp add: of_rat_hom.map_poly_hom_smult)
@@ -2566,22 +2774,8 @@ proof (rule ccontr)
     finally show ?case by simp
   qed auto
   also have "\<dots> = (\<Sum>q. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp x))"
-    unfolding \<beta>''_def of_int_sum using \<open>finite Roots_ms\<close>
-  proof (subst Sum_any_sum_swap [symmetric])
-    have "{x. (\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) x) *
-             \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z::complex. ipoly x z = 0}) \<noteq> 0} \<subseteq>
-          (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
-    proof safe
-      fix q assume "(\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) q) * \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z. ipoly q (z::complex) = 0}) \<noteq> 0"
-      then obtain X where "X \<in> Roots_ms" "count (prime_factorization (Q X)) q \<noteq> 0"
-        by (elim sum.not_neutral_contains_not_neutral) auto
-      thus "q \<in> (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
-        by auto
-    qed
-    thus "finite {x. (\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) x) *
-             \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z::complex. ipoly x z = 0}) \<noteq> 0}"
-      by (rule finite_subset) auto
-  qed (simp_all add: sum_distrib_right)
+    unfolding \<beta>''_def of_int_sum
+    by (subst Sum_any_sum_swap [symmetric]) (auto simp: sum_distrib_right)
   also have "\<dots> = (\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp x))"
     by (intro Sum_any.expand_superset finite_subset[OF supp_\<beta>'']) auto
   finally have "(\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp (x :: complex))) = 0"
