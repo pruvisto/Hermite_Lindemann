@@ -11,6 +11,56 @@ imports
 (*"Polynomial_Factorization.Square_Free_Factorization"*)
 begin
 
+subsection \<open>The lexicographic ordering on complex numbers\<close>
+
+definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
+  "less_eq_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x \<le> Im y"
+
+definition less_complex_lex (infix "<\<^sub>\<complex>" 50) where
+  "less_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x < Im y"
+
+interpretation complex_lex: linorder less_eq_complex_lex less_complex_lex
+  by standard (auto simp: less_eq_complex_lex_def less_complex_lex_def complex_eq_iff)
+
+lemmas [trans] =
+  complex_lex.order.trans complex_lex.less_le_trans
+  complex_lex.less_trans complex_lex.le_less_trans
+
+lemma add_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c \<le>\<^sub>\<complex> d \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + d"
+  and add_right_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + c"
+  and add_left_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c + a \<le>\<^sub>\<complex> c + b"
+  and add_strict_right_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> a + c <\<^sub>\<complex> b + c"
+  and add_strict_left_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> c + a <\<^sub>\<complex> c + b"
+  by (auto simp: less_eq_complex_lex_def less_complex_lex_def)
+
+lemma (in ordered_comm_monoid_add) sum_mono_complex_lex:
+  "(\<And>i. i\<in>K \<Longrightarrow> f i \<le>\<^sub>\<complex> g i) \<Longrightarrow> (\<Sum>i\<in>K. f i) \<le>\<^sub>\<complex> (\<Sum>i\<in>K. g i)"
+  by (induct K rule: infinite_finite_induct) (use add_mono_complex_lex in auto)
+
+lemma sum_strict_mono_ex1_complex_lex:
+  fixes f g :: "'i \<Rightarrow> complex"
+  assumes "finite A"
+    and "\<forall>x\<in>A. f x \<le>\<^sub>\<complex> g x"
+    and "\<exists>a\<in>A. f a <\<^sub>\<complex> g a"
+  shows "sum f A <\<^sub>\<complex> sum g A"
+proof-
+  from assms(3) obtain a where a: "a \<in> A" "f a <\<^sub>\<complex> g a" by blast
+  have "sum f A = sum f ((A - {a}) \<union> {a})"
+    by (simp add: insert_absorb[OF \<open>a \<in> A\<close>])
+  also have "\<dots> = sum f (A - {a}) + sum f {a}"
+    using \<open>finite A\<close> by (subst sum.union_disjoint) auto
+  also have "\<dots> \<le>\<^sub>\<complex> sum g (A - {a}) + sum f {a}"
+    by (intro add_mono_complex_lex sum_mono_complex_lex) (simp_all add: assms)
+  also have "\<dots> <\<^sub>\<complex> sum g (A - {a}) + sum g {a}"
+    using a by (intro add_strict_left_mono_complex_lex) auto
+  also have "\<dots> = sum g ((A - {a}) \<union> {a})"
+    using \<open>finite A\<close> by (subst sum.union_disjoint[symmetric]) auto
+  also have "\<dots> = sum g A" by (simp add: insert_absorb[OF \<open>a \<in> A\<close>])
+  finally show ?thesis
+    by simp
+qed
+
+
 subsection \<open>Auxiliary facts about univariate polynomials\<close>
 
 lemma irreducible_imp_squarefree:
@@ -322,6 +372,94 @@ qed
 lemma pcompose_monom: "pcompose (Polynomial.monom c n) p = Polynomial.smult c (p ^ n)"
   by (simp add: monom_altdef pcompose_hom.hom_power pcompose_smult)
 
+lemma poly_roots_uminus [simp]: "poly_roots (-p) = poly_roots p"
+  using poly_roots_smult[of "-1" p] by (simp del: poly_roots_smult)
+
+lemma poly_roots_normalize [simp]:
+  fixes p :: "'a :: {normalization_semidom, idom_divide} poly"
+  shows "poly_roots (normalize p) = poly_roots p"
+proof (cases "p = 0")
+  case [simp]: False
+  have "poly_roots p = poly_roots (unit_factor p * normalize p)"
+    by simp
+  also have "\<dots> = poly_roots (normalize p)"
+    unfolding unit_factor_poly_def by simp
+  finally show ?thesis ..
+qed auto
+
+
+lemma poly_roots_of_int_normalize [simp]:
+  "poly_roots (of_int_poly (normalize p) :: 'a :: {idom, ring_char_0} poly) =
+   poly_roots (of_int_poly p)"
+proof (cases "p = 0")
+  case [simp]: False
+  have "poly_roots (of_int_poly p :: 'a poly) = poly_roots (of_int_poly (unit_factor p * normalize p))"
+    by simp
+  also have "\<dots> = poly_roots (Polynomial.smult (of_int (sgn (Polynomial.lead_coeff p)))
+                    (of_int_poly (normalize p)))"
+    by (simp add: unit_factor_poly_def of_int_hom.map_poly_hom_smult)
+  also have "\<dots> = poly_roots (Ring_Hom_Poly.of_int_poly (normalize p) :: 'a poly)"
+    by (intro poly_roots_smult) (auto simp: sgn_if)
+  finally show ?thesis ..
+qed auto
+
+lemma poly_roots_power [simp]: "poly_roots (p ^ n) = repeat_mset n (poly_roots p)"
+proof (cases "p = 0")
+  case True
+  thus ?thesis by (cases n) auto
+next
+  case False
+  thus ?thesis by (induction n) (auto simp: poly_roots_mult)
+qed
+
+lemma poly_roots_conv_sum_prime_factors:
+  "poly_roots q = (\<Sum>p\<in>#prime_factorization q. poly_roots p)"
+proof (cases "q = 0")
+  case [simp]: False
+
+  have "(\<Sum>p\<in>#prime_factorization q. poly_roots p) =
+        poly_roots (prod_mset (prime_factorization q))"
+    by (rule poly_roots_prod_mset [symmetric]) auto
+  also have "\<dots> = poly_roots (normalize (prod_mset (prime_factorization q)))"
+    by simp
+  also have "normalize (prod_mset (prime_factorization q)) = normalize q"
+    by (rule prod_mset_prime_factorization_weak) auto
+  also have "poly_roots \<dots> = poly_roots q"
+    by simp
+  finally show ?thesis ..
+qed auto
+
+lemma poly_roots_of_int_conv_sum_prime_factors:
+  "poly_roots (of_int_poly q :: 'a :: {idom, ring_char_0} poly) =
+   (\<Sum>p\<in>#prime_factorization q. poly_roots (of_int_poly p))"
+proof (cases "q = 0")
+  case [simp]: False
+
+  have "(\<Sum>p\<in>#prime_factorization q. poly_roots (of_int_poly p :: 'a poly)) =
+        poly_roots (\<Prod>p\<in>#prime_factorization q. of_int_poly p)"
+    by (subst poly_roots_prod_mset) (auto simp: multiset.map_comp o_def)
+  also have "(\<Prod>p\<in>#prime_factorization q. of_int_poly p :: 'a poly) =
+               of_int_poly (prod_mset (prime_factorization q))"
+    by simp
+  also have "poly_roots \<dots> = poly_roots (of_int_poly (normalize (prod_mset (prime_factorization q))))"
+    by (rule poly_roots_of_int_normalize [symmetric])
+  also have "normalize (prod_mset (prime_factorization q)) = normalize q"
+    by (rule prod_mset_prime_factorization_weak) auto
+  also have "poly_roots (of_int_poly \<dots> :: 'a poly) = poly_roots (of_int_poly q)"
+    by simp
+  finally show ?thesis ..
+qed auto
+
+lemma dvd_imp_poly_roots_subset:
+  assumes "q \<noteq> 0" "p dvd q"
+  shows   "poly_roots p \<subseteq># poly_roots q"
+proof -
+  from assms have "p \<noteq> 0"
+    by auto
+  thus ?thesis
+    using assms by (intro mset_subset_eqI) (auto intro: dvd_imp_order_le)
+qed
+  
 
 
 subsection \<open>Auxiliary facts about multivariate polynomials\<close>
@@ -362,6 +500,7 @@ proof safe
     using assms(1)[OF \<pi>] by (simp add: permutes_image)
   finally show "mpoly_map_vars \<pi> (prod f X) = prod f X" .
 qed
+
 
 
 subsection \<open>Converting a univariate polynomial into a multivariate one\<close>
@@ -1921,7 +2060,115 @@ qed
 
 lemma finite_multisets_of_size:
   assumes "finite A"
-  shows   "finite {X. size X = n \<and> set_mset X \<subseteq> A}"
+  shows   "finite {X. set_mset X \<subseteq> A \<and> size X = n}"
+proof (rule finite_subset)
+  show "{X. set_mset X \<subseteq> A \<and> size X = n} \<subseteq> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
+  proof
+    fix X assume X: "X \<in> {X. set_mset X \<subseteq> A \<and> size X = n}"
+    obtain xs where [simp]: "X = mset xs"
+      by (metis ex_mset)
+    thus "X \<in> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
+      using X by auto
+  qed
+next
+  show "finite (mset ` {xs. set xs \<subseteq> A \<and> length xs = n})"
+    by (intro finite_imageI finite_lists_length_eq assms)
+qed
+
+instance poly :: ("{idom_divide,normalization_semidom_multiplicative,factorial_ring_gcd,
+                    semiring_gcd_mult_normalize}") factorial_semiring_multiplicative ..
+
+lemma lead_coeff_prod_mset:
+  fixes A :: "'a::{comm_semiring_1, semiring_no_zero_divisors} poly multiset"
+  shows "Polynomial.lead_coeff (prod_mset A) = prod_mset (image_mset Polynomial.lead_coeff A)"
+  by (induction A) (auto simp: Polynomial.lead_coeff_mult)
+
+lemma content_normalize [simp]:
+  fixes p :: "'a :: {factorial_semiring, idom_divide, semiring_gcd, normalization_semidom_multiplicative} poly"
+  shows "content (normalize p) = content p"
+proof (cases "p = 0")
+  case [simp]: False
+  have "content p = content (unit_factor p * normalize p)"
+    by simp
+  also have "\<dots> = content (unit_factor p) * content (normalize p)"
+    by (rule content_mult)
+  also have "content (unit_factor p) = 1"
+    by (auto simp: unit_factor_poly_def)
+  finally show ?thesis by simp
+qed auto
+
+lemma abs_prod_mset: "\<bar>prod_mset (A :: 'a :: idom_abs_sgn multiset)\<bar> = prod_mset (image_mset abs A)"
+  by (induction A) (auto simp: abs_mult)
+
+lemma content_1_imp_nonconstant_prime_factors:
+  assumes "content (p :: int poly) = 1" and "q \<in> prime_factors p"
+  shows   "Polynomial.degree q > 0"
+proof -
+  let ?d = "Polynomial.degree :: int poly \<Rightarrow> nat"
+  let ?lc = "Polynomial.lead_coeff :: int poly \<Rightarrow> int"
+  define P where "P = prime_factorization p"
+  define P1 where "P1 = filter_mset (\<lambda>p. ?d p = 0) P"
+  define P2 where "P2 = filter_mset (\<lambda>p. ?d p > 0) P"
+  have [simp]: "p \<noteq> 0"
+    using assms by auto
+  have "1 = content (normalize p)"
+    using assms by simp
+  also have "normalize p = prod_mset P"
+    unfolding P_def by (rule prod_mset_prime_factorization [symmetric]) auto
+  also have "P = filter_mset (\<lambda>p. ?d p = 0) P + filter_mset (\<lambda>p. ?d p > 0) P"
+    by (induction P) auto
+  also have "prod_mset \<dots> = prod_mset P1 * prod_mset P2"
+    unfolding P1_def P2_def by (subst prod_mset.union) auto
+  also have "content \<dots> = content (prod_mset P1) * content (prod_mset P2)"
+    unfolding content_mult ..
+  also have "image_mset id P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
+    by (intro image_mset_cong) (auto simp: P1_def elim!: degree_eq_zeroE)
+  hence "P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
+    by simp
+  also have "content (prod_mset \<dots>) = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
+    by (simp add: content_prod_mset multiset.map_comp o_def abs_prod_mset)
+  finally have "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> * content (prod_mset P2) = 1" ..
+  hence "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> dvd 1"
+    unfolding dvd_def by metis
+
+  have "set_mset P1 = {}"
+  proof (rule ccontr)
+    assume "set_mset P1 \<noteq> {}"
+    then obtain q where q: "q \<in># P1"
+      by blast
+    have "\<bar>?lc q\<bar> dvd (\<Prod>q\<in>#P1. \<bar>?lc q\<bar>)"
+      by (rule dvd_prod_mset) (use q in auto)
+    also have "\<dots> = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
+      by (simp add: abs_prod_mset multiset.map_comp o_def)
+    also have "\<dots> dvd 1"
+      by fact
+    finally have "is_unit (?lc q)"
+      by simp
+    hence "is_unit q"
+      using q unfolding P1_def by (auto elim!: degree_eq_zeroE)
+    moreover have "prime q"
+      using q unfolding P1_def P_def by auto
+    ultimately show False by auto
+  qed
+  with assms show ?thesis
+    by (auto simp: P1_def P_def)
+qed
+
+lemma sum_mset_image_mset_sum_mset_image_mset:
+   "sum_mset (image_mset g (sum_mset (image_mset f A))) =
+    sum_mset (image_mset (\<lambda>x. sum_mset (image_mset g (f x))) A)"
+  by (induction A) auto
+
+lemma sum_mset_image_mset_singleton: "sum_mset (image_mset (\<lambda>x. {#f x#}) A) = image_mset f A"
+  by (induction A) auto
+
+lemma sum_mset_conv_Sum_any:
+  "sum_mset (image_mset f A) = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
+  sorry
+
+lemma Sum_any_sum_swap:
+  assumes "finite A" "finite {x. sum (f x) A \<noteq> 0}"
+  shows   "Sum_any (\<lambda>x. sum (f x) A) = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
   sorry
 
 lemma Hermite_Lindemann_aux2:
@@ -1945,6 +2192,33 @@ proof (rule ccontr)
   define n where "n = card Roots"
   obtain Root where Root: "bij_betw Root {..<n} Roots"
     using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
+  define unRoot :: "complex \<Rightarrow> nat" where "unRoot = inv_into {..<n} Root"
+  have unRoot: "bij_betw unRoot Roots {..<n}"
+    unfolding unRoot_def by (intro bij_betw_inv_into Root)
+  have unRoot_Root [simp]: "unRoot (Root i) = i" if "i < n" for i
+    unfolding unRoot_def using Root that by (subst inv_into_f_f) (auto simp: bij_betw_def)
+  have Root_unRoot [simp]: "Root (unRoot x) = x" if "x \<in> Roots" for x
+    unfolding unRoot_def using Root that by (subst f_inv_into_f) (auto simp: bij_betw_def)
+  have [simp, intro]: "Root i \<in> Roots" if "i < n" for i
+    using Root that by (auto simp: bij_betw_def)
+  have [simp, intro]: "unRoot x < n" if "x \<in> Roots" for x
+    using unRoot that by (auto simp: bij_betw_def)
+
+  define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
+    "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
+  have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
+    sorry
+  have convert_perm_compose: "convert_perm (\<pi> \<circ> \<sigma>) = convert_perm \<pi> \<circ> convert_perm \<sigma>"
+    if "\<pi> permutes {..<n}" "\<sigma> permutes {..<n}" for \<sigma> \<pi>
+  proof (intro ext)
+    fix x show "convert_perm (\<pi> \<circ> \<sigma>) x = (convert_perm \<pi> \<circ> convert_perm \<sigma>) x"
+    proof (cases "x \<in> Roots")
+      case True
+      thus ?thesis
+        using permutes_in_image[OF that(2), of "unRoot x"]
+        by (auto simp: convert_perm_def bij_betw_def)
+    qed (auto simp: convert_perm_def)
+  qed
 
   have "X \<subseteq> Roots"
   proof safe
@@ -1965,15 +2239,265 @@ proof (rule ccontr)
   have [simp]: "card perms = fact n"
     unfolding perms_def n_def by (intro card_permutations) auto
   define Roots_ms :: "complex multiset set" where
-    "Roots_ms = {X. size X = fact n \<and> set_mset X \<subseteq> Roots}"
+    "Roots_ms = {X. set_mset X \<subseteq> Roots \<and> size X = fact n}"
   have [intro]: "finite Roots_ms"
     unfolding Roots_ms_def by (rule finite_multisets_of_size) auto
   define tuples :: "complex multiset \<Rightarrow> ((complex \<Rightarrow> complex) \<Rightarrow> complex) set" where
     "tuples = (\<lambda>X. {f\<in>perms \<rightarrow>\<^sub>E Roots. image_mset f (mset_set perms) = X})"
-  have [intro]: "finite (tuples X)" for X
+  have fin_tuples [intro]: "finite (tuples X)" for X
     unfolding tuples_def by (rule finite_subset[of _ "perms \<rightarrow>\<^sub>E Roots", OF _ finite_PiE]) auto
   define tuples' :: "(complex multiset \<times> ((complex \<Rightarrow> complex) \<Rightarrow> complex)) set" where
     "tuples' = (SIGMA X:Roots_ms. tuples X)"
+
+
+  define R :: "complex multiset \<Rightarrow> complex multiset" where
+    "R = (\<lambda>X. image_mset (\<lambda>f. \<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) (mset_set (tuples X)))"
+  obtain Q :: "complex multiset \<Rightarrow> int poly"
+    where Q: "\<And>X. X \<in> Roots_ms \<Longrightarrow> poly_roots (of_int_poly (Q X)) = R X"
+             "\<And>X. X \<in> Roots_ms \<Longrightarrow> content (Q X) = 1"
+  proof -
+    {
+      fix X :: "complex multiset"
+      assume X: "X \<in> Roots_ms"
+      define Q :: "complex poly mpoly" where
+        "Q = (\<Prod>f\<in>tuples X. Const [:0, 1:] - (\<Sum>\<sigma> | \<sigma> permutes {..<n}. Var (\<sigma> (unRoot (f (convert_perm \<sigma>))))))"
+
+      define Q1 where "Q1 = (\<Prod>f\<in>tuples X. [:- (\<Sum>\<sigma> | \<sigma> permutes Roots. \<sigma> (f \<sigma>)), 1:])"
+
+      define ratpolys :: "complex poly set" where "ratpolys = {p. \<forall>i. poly.coeff p i \<in> \<rat>}"
+
+      have "insertion (\<lambda>x. [:Root x:]) Q \<in> ratpolys"
+      proof (rule symmetric_poly_of_roots_in_subring[where l = "\<lambda>x. [:x:]"])
+        show "ring_closed ratpolys"
+          unfolding ratpolys_def by standard (auto intro: coeff_mult_semiring_closed)
+        then interpret ratpolys: ring_closed ratpolys .
+        have "pCons 0 1 \<in> ratpolys "
+          by (auto simp: ratpolys_def coeff_pCons split: nat.splits)
+        thus "\<forall>m. MPoly_Type.coeff Q m \<in> ratpolys"
+          unfolding Q_def
+          by (intro allI ratpolys.coeff_prod_closed)
+             (auto intro!: ratpolys.minus_closed ratpolys.sum_closed ratpolys.uminus_closed simp: coeff_Var mpoly_coeff_Const when_def)
+        show "ring_homomorphism (\<lambda>x::complex. [:x:])" ..
+        have "\<sigma> (unRoot (f (convert_perm \<sigma>))) < n" if "f \<in> tuples X" "\<sigma> permutes {..<n}" for f \<sigma>
+        proof -
+          have "convert_perm \<sigma> \<in> perms"
+            using bij_convert that(2) by (auto simp: bij_betw_def perms_def)
+          hence "f (convert_perm \<sigma>) \<in> Roots"
+            using that by (auto simp: tuples_def)
+          thus ?thesis
+            using permutes_in_image[OF that(2)] by simp
+        qed
+        thus "vars Q \<subseteq> {..<n}"
+          unfolding Q_def
+          by (intro order.trans[OF vars_prod] UN_least order.trans[OF vars_sum]
+                order.trans[OF vars_diff] Un_least) (auto simp: vars_Var)
+        define lc :: complex where "lc = of_int (Polynomial.lead_coeff P)"
+        show "[:inverse lc:] \<in> ratpolys"
+          by (auto simp: ratpolys_def coeff_pCons lc_def split: nat.splits)
+        show "\<forall>i. [:poly.coeff (of_int_poly P) i:] \<in> ratpolys"
+          by (auto simp: ratpolys_def coeff_pCons split: nat.splits)
+        have "lc \<noteq> 0"
+          by (auto simp: lc_def)
+        thus "[:inverse lc:] * [:lc:] = 1"
+          by auto
+        have "rsquarefree (of_int_poly P :: complex poly)"
+          sorry
+        hence "of_int_poly P = Polynomial.smult lc (\<Prod>x\<in>Roots. [:-x, 1:])"
+          unfolding lc_def Roots_def of_int_hom.hom_lead_coeff[symmetric]
+          by (rule complex_poly_decompose_rsquarefree [symmetric])
+        also have "(\<Prod>x\<in>Roots. [:-x, 1:]) = (\<Prod>i<n. [:-Root i, 1:])"
+          by (rule prod.reindex_bij_betw[OF Root, symmetric])
+        finally show "of_int_poly P = Polynomial.smult lc (\<Prod>i<n. [:- Root i, 1:])" .
+
+        show "symmetric_mpoly {..<n} Q"
+          unfolding symmetric_mpoly_def
+        proof safe
+          fix \<pi> assume \<pi>: "\<pi> permutes {..<n}"
+          have bij_convert': "bij_betw (\<lambda>f. f \<circ> (\<circ>) (convert_perm \<pi>)) (tuples X) (tuples X)"
+            sorry
+
+          have "mpoly_map_vars \<pi> Q = (\<Prod>f\<in>tuples X. Const (pCons 0 1) - (\<Sum> \<sigma> | \<sigma> permutes {..<n}.
+                  Var ((\<pi> \<circ> \<sigma>) (unRoot (f (convert_perm \<sigma>))))))"
+            by (simp add: Q_def permutes_bij[OF \<pi>])
+          also have "\<dots> = (\<Prod>f\<in>tuples X. Const (pCons 0 1) - (\<Sum> \<sigma> | \<sigma> permutes {..<n}.
+                  Var ((\<pi> \<circ> \<sigma>) (unRoot ((f \<circ> (\<lambda>\<sigma>. convert_perm \<pi> \<circ> \<sigma>)) (convert_perm \<sigma>))))))"
+            by (rule prod.reindex_bij_betw [OF bij_convert', symmetric])
+          also have "\<dots> = Q"
+            unfolding Q_def
+          proof (rule prod.cong, goal_cases)
+            case (2 f)
+            have "(\<Sum> \<sigma> | \<sigma> permutes {..<n}. Var ((\<pi> \<circ> \<sigma>) (unRoot ((f \<circ> (\<lambda>\<sigma>. convert_perm \<pi> \<circ> \<sigma>)) (convert_perm \<sigma>))))) =
+                  (\<Sum> \<sigma> | \<sigma> permutes {..<n}. Var ((\<pi> \<circ> \<sigma>) (unRoot (f (convert_perm (\<pi> \<circ> \<sigma>))))))"
+              using \<pi> by (intro sum.cong refl, subst convert_perm_compose) simp_all
+            also have "\<dots> = (\<Sum> \<sigma> | \<sigma> permutes {..<n}. Var (\<sigma> (unRoot (f (convert_perm \<sigma>)))))"
+              using \<pi> by (rule setum_permutations_compose_left [symmetric])
+            finally show ?case by simp
+          qed auto
+          finally show "mpoly_map_vars \<pi> Q = Q" .
+        qed
+      qed auto
+      also have "insertion (\<lambda>x. [:Root x:]) Q = Q1"
+        unfolding Q_def Q1_def insertion_prod insertion_sum insertion_diff insertion_Const insertion_Var
+      proof (intro prod.cong, goal_cases)
+        case f: (2 f)
+        have "(\<Sum>\<sigma> | \<sigma> permutes {..<n}. [:Root (\<sigma> (unRoot (f (convert_perm \<sigma>)))):]) =
+              (\<Sum>\<sigma> | \<sigma> permutes {..<n}. [:convert_perm \<sigma> (f (convert_perm \<sigma>)):])"
+        proof (rule sum.cong, goal_cases)
+          case (2 \<sigma>)
+          have "convert_perm \<sigma> permutes Roots"
+            using bij_convert 2 by (auto simp: bij_betw_def)
+          hence "f (convert_perm \<sigma>) \<in> Roots"
+            using f by (auto simp: tuples_def perms_def)
+          thus ?case by (simp add: convert_perm_def)
+        qed simp_all
+        also have "\<dots> = (\<Sum>\<sigma> | \<sigma> permutes Roots. [:\<sigma> (f \<sigma>):])"
+          by (rule sum.reindex_bij_betw[OF bij_convert])
+        finally show ?case
+          by (simp flip: pCons_one coeff_lift_hom.hom_sum)
+      qed simp_all
+      finally have "Q1 \<in> ratpolys"
+        by auto
+      then obtain Q2 :: "rat poly" where Q2: "Q1 = map_poly of_rat Q2"
+        unfolding ratpolys_def using ratpolyE[of Q1] by blast
+      then obtain Q3 :: "int poly" and lc :: rat
+        where Q3: "Q2 = Polynomial.smult lc (of_int_poly Q3)" and "lc \<noteq> 0" and "content Q3 = 1"
+        sorry
+
+      have "poly_roots (of_int_poly Q3) = poly_roots (map_poly (of_rat \<circ> of_int) Q3)"
+        by simp
+      also have "map_poly (of_rat \<circ> of_int) Q3 = map_poly of_rat (map_poly of_int Q3)"
+        by (subst map_poly_map_poly) auto
+      also have "poly_roots \<dots> = poly_roots (Polynomial.smult (of_rat lc) \<dots>)"
+        using \<open>lc \<noteq> 0\<close> by simp
+      also have "Polynomial.smult (of_rat lc) (map_poly of_rat (map_poly of_int Q3)) =
+                 map_poly of_rat (Polynomial.smult lc (map_poly of_int Q3))"
+        by (simp add: of_rat_hom.map_poly_hom_smult)
+      also have "\<dots> = Q1"
+        by (simp only: Q3 [symmetric] Q2 [symmetric])
+      also have "poly_roots Q1 = R X"
+        unfolding Q1_def
+        by (subst poly_roots_prod, force, subst poly_roots_linear)
+           (auto simp: R_def perms_def sum_mset_image_mset_singleton sum_unfold_sum_mset)
+      finally have "\<exists>Q. poly_roots (of_int_poly Q) = R X \<and> content Q = 1"
+        using \<open>content Q3 = 1\<close> by metis
+    }
+    hence "\<exists>Q. \<forall>X\<in>Roots_ms. poly_roots (of_int_poly (Q X)) = R X \<and> content (Q X) = 1"
+      by metis
+    thus ?thesis using that by metis
+  qed
+
+  define \<beta>'' :: "int poly \<Rightarrow> int"
+    where "\<beta>'' = (\<lambda>q. \<Sum>X\<in>Roots_ms. int (count (prime_factorization (Q X)) q) * (\<Prod>x\<in>#X. \<beta>' x))"
+  have supp_\<beta>'': "{q. \<beta>'' q \<noteq> 0} \<subseteq> (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
+    unfolding \<beta>''_def using sum.not_neutral_contains_not_neutral by fastforce
+
+  text \<open>
+    We have to prove that \<open>\<beta>''\<close> is not zero everywhere. We do this by selecting the nonzero term
+    with the maximal exponent (w.r.t. the lexicographic ordering on the complex numbers) in every
+    factor of the product and show that there is no other summand corresponding to these, so
+    that their non-zero coefficient cannot get cancelled.
+  \<close>
+  have "{q. \<beta>'' q \<noteq> 0} \<noteq> {}"
+  proof -
+    define f where "f = restrict (\<lambda>\<sigma>. inv_into UNIV \<sigma> (complex_lex.Max (\<sigma> ` X))) perms"
+    have f: "f \<in> perms \<rightarrow> X"
+    proof
+      fix \<sigma> assume \<sigma>: "\<sigma> \<in> perms"
+      have "complex_lex.Max (\<sigma> ` X) \<in> \<sigma> ` X"
+        using \<open>X \<noteq> {}\<close> by (intro complex_lex.Max_in finite_imageI) auto
+      thus "f \<sigma> \<in> X"
+        using \<sigma> by (auto simp: f_def permutes_inverses[of \<sigma> Roots] perms_def)
+    qed
+    hence f': "f \<in> perms \<rightarrow>\<^sub>E Roots"
+      using \<open>X \<subseteq> Roots\<close> by (auto simp: f_def PiE_def)
+
+    define Y where "Y = image_mset f (mset_set perms)"
+    have "Y \<in> Roots_ms" using f' \<open>finite perms\<close>
+      by (auto simp: Roots_ms_def Y_def)
+
+    have "(\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) \<in># R Y"
+    proof -
+      from f' have "f \<in> tuples Y"
+        unfolding tuples_def Y_def by simp
+      thus ?thesis
+        unfolding R_def using fin_tuples[of Y] by auto
+    qed
+    also have "R Y = poly_roots (of_int_poly (Q Y))"
+      by (rule Q(1) [symmetric]) fact
+    also have "\<dots> = (\<Sum>p\<in>#prime_factorization (Q Y). poly_roots (of_int_poly p))"
+      by (rule poly_roots_of_int_conv_sum_prime_factors)
+    finally obtain q where q: "q \<in> prime_factors (Q Y)" "(\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) \<in># poly_roots (of_int_poly q)"
+      by auto
+
+    have "\<beta>'' q = (\<Sum>X\<in>{Y}. int (count (prime_factorization (Q X)) q) * prod_mset (image_mset \<beta>' X))"
+      unfolding \<beta>''_def
+    proof (intro sum.mono_neutral_right ballI)
+      fix Y' assume Y': "Y' \<in> Roots_ms - {Y}"
+      show "int (count (prime_factorization (Q Y')) q) * \<Prod>\<^sub># (image_mset \<beta>' Y') = 0"
+      proof (cases "set_mset Y' \<subseteq> X")
+        case Y'_subset: True
+        have "q \<notin> prime_factors (Q Y')"
+        proof
+          assume q': "q \<in> prime_factors (Q Y')"
+          have "poly_roots (of_int_poly q :: complex poly) \<subseteq>#
+                         poly_roots (of_int_poly (Q Y'))"
+            using q' by (intro dvd_imp_poly_roots_subset of_int_poly_hom.hom_dvd) auto
+          with q(2) have "(\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) \<in># poly_roots (of_int_poly (Q Y'))"
+            by (meson mset_subset_eqD)
+          also have "poly_roots (of_int_poly (Q Y')) = R Y'"
+            using Q(1)[of Y'] Y' by auto
+          finally obtain g where g: "g \<in> tuples Y'" "(\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) = (\<Sum>\<sigma>\<in>perms. \<sigma> (g \<sigma>))"
+            unfolding R_def using fin_tuples[of Y'] by auto
+
+          moreover have "(\<Sum>\<sigma>\<in>perms. \<sigma> (g \<sigma>)) <\<^sub>\<complex> (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>))"
+          proof (rule sum_strict_mono_ex1_complex_lex)
+            show le: "\<forall>\<sigma>\<in>perms. \<sigma> (g \<sigma>) \<le>\<^sub>\<complex> \<sigma> (f \<sigma>)"
+            proof
+              fix \<sigma> assume \<sigma>: "\<sigma> \<in> perms"
+              hence \<sigma>': "\<sigma> permutes Roots"
+                by (auto simp: perms_def)
+              have "image_mset g (mset_set perms) = Y'"
+                using g by (auto simp: tuples_def)
+              also have "set_mset \<dots> \<subseteq> X"
+                by fact
+              finally have "g ` perms \<subseteq> X"
+                using \<open>finite perms\<close> by auto
+              hence "\<sigma> (g \<sigma>) \<le>\<^sub>\<complex> complex_lex.Max (\<sigma> ` X)"
+                using \<open>finite perms\<close> \<sigma>
+                by (intro complex_lex.Max.coboundedI finite_imageI imageI)
+                   (auto simp: tuples_def)
+              also have "\<dots> = \<sigma> (f \<sigma>)"
+                using \<sigma> by (simp add: f_def permutes_inverses[OF \<sigma>'])
+              finally show "\<sigma> (g \<sigma>) \<le>\<^sub>\<complex> \<sigma> (f \<sigma>)" .
+            qed
+
+            have "image_mset g (mset_set perms) \<noteq> image_mset f (mset_set perms)"
+              using Y' g by (auto simp: tuples_def Y_def)
+            then obtain \<sigma> where \<sigma>: "\<sigma> \<in># mset_set perms" "g \<sigma> \<noteq> f \<sigma>"
+              by (meson multiset.map_cong)
+            have "\<sigma> permutes Roots"
+              using \<sigma> \<open>finite perms\<close> by (auto simp: perms_def)
+            have "\<sigma> (g \<sigma>) \<noteq> \<sigma> (f \<sigma>)"
+              using permutes_inj[OF \<open>\<sigma> permutes Roots\<close>] \<sigma> by (auto simp: inj_def)
+            moreover have "\<sigma> (g \<sigma>) \<le>\<^sub>\<complex> \<sigma> (f \<sigma>)"
+              using le \<sigma> \<open>finite perms\<close> by auto
+            ultimately have "\<sigma> (g \<sigma>) <\<^sub>\<complex> \<sigma> (f \<sigma>)"
+              by simp
+            thus "\<exists>\<sigma>\<in>perms. \<sigma> (g \<sigma>) <\<^sub>\<complex> \<sigma> (f \<sigma>)"
+              using \<sigma> \<open>finite perms\<close> by auto
+          qed (use \<open>finite perms\<close> in simp_all)
+          ultimately show False by simp
+        qed
+        thus ?thesis by auto
+      qed (auto simp: \<beta>'_def)
+    qed (use \<open>Y \<in> Roots_ms\<close> in auto)
+    also have "\<dots> = int (count (prime_factorization (Q Y)) q) * prod_mset (image_mset \<beta>' Y)"
+      by simp
+    also have "\<dots> \<noteq> 0"
+      using q nz \<open>finite X\<close> \<open>X \<noteq> {}\<close> \<open>finite perms\<close> f by (auto simp: \<beta>'_def Y_def)
+    finally show "{q. \<beta>'' q \<noteq> 0} \<noteq> {}"
+      by auto
+  qed
 
   have "0 = (\<Sum>x\<in>X. \<beta> x * exp x)"
     using sum0 ..
@@ -2007,11 +2531,88 @@ proof (rule ccontr)
     unfolding tuples'_def by (intro sum.Sigma [symmetric]) auto
   also have "\<dots> = (\<Sum>X\<in>Roots_ms. of_int (\<Prod>x\<in>#X. \<beta>' x) * (\<Sum>f\<in>tuples X. exp (\<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>))))"
     by (simp add: sum_distrib_left)
-  
-  
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. of_int (\<Prod>x\<in>#X. \<beta>' x) * (\<Sum>x\<in>#R X. exp x))"
+    by (simp only: R_def multiset.map_comp o_def sum_unfold_sum_mset)
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. of_int (\<Prod>x\<in>#X. \<beta>' x) * (\<Sum>x\<in>#poly_roots (of_int_poly (Q X)). exp x))"
+    by (intro sum.cong) (simp_all flip: Q)
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. (\<Sum>p. of_int (int (count (prime_factorization (Q X)) p) * (\<Prod>x\<in>#X. \<beta>' x)) * (\<Sum>x | ipoly p x = 0. exp x)))"
+  proof (rule sum.cong, goal_cases)
+    case (2 X)
+    have "(\<Sum>x\<in>#poly_roots (of_int_poly (Q X) :: complex poly). exp x) =
+          (\<Sum>x \<in># (\<Sum>p\<in>#prime_factorization (Q X). poly_roots (of_int_poly p)). exp x)"
+      by (subst poly_roots_of_int_conv_sum_prime_factors) (rule refl)
+    also have "\<dots> = (\<Sum>p\<in>#prime_factorization (Q X). \<Sum>x\<in>#poly_roots (of_int_poly p). exp x)"
+      by (rule sum_mset_image_mset_sum_mset_image_mset)
+    also have "rsquarefree (of_int_poly p :: complex poly)" if "p \<in> prime_factors (Q X)" for p
+    proof (rule irreducible_imp_rsquarefree_of_int_poly)
+      have "prime p"
+        using that by auto
+      thus "irreducible p"
+        by blast
+    next
+      show "Polynomial.degree p > 0"
+        by (intro content_1_imp_nonconstant_prime_factors[OF Q(2) that] 2)
+    qed
+    hence "(\<Sum>p\<in>#prime_factorization (Q X). \<Sum>x\<in>#poly_roots (of_int_poly p). exp x) =
+           (\<Sum>p\<in>#prime_factorization (Q X). \<Sum>x | ipoly p x = 0. exp (x :: complex))"
+      unfolding sum_unfold_sum_mset
+      by (intro arg_cong[of _ _ sum_mset] image_mset_cong sum.cong refl,
+          subst rsquarefree_poly_roots_eq) auto
+    also have "\<dots> = (\<Sum>p. count (prime_factorization (Q X)) p * (\<Sum>x | ipoly p x = 0. exp (x :: complex)))"
+      by (rule sum_mset_conv_Sum_any)
+    also have "of_int (\<Prod>x\<in>#X. \<beta>' x) * \<dots> =
+               (\<Sum>p. of_int (int (count (prime_factorization (Q X)) p) * (\<Prod>x\<in>#X. \<beta>' x)) * (\<Sum>x | ipoly p x = 0. exp x))"
+      by (subst Sum_any_right_distrib) (auto simp: mult_ac)
+    finally show ?case by simp
+  qed auto
+  also have "\<dots> = (\<Sum>q. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp x))"
+    unfolding \<beta>''_def of_int_sum using \<open>finite Roots_ms\<close>
+  proof (subst Sum_any_sum_swap [symmetric])
+    have "{x. (\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) x) *
+             \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z::complex. ipoly x z = 0}) \<noteq> 0} \<subseteq>
+          (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
+    proof safe
+      fix q assume "(\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) q) * \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z. ipoly q (z::complex) = 0}) \<noteq> 0"
+      then obtain X where "X \<in> Roots_ms" "count (prime_factorization (Q X)) q \<noteq> 0"
+        by (elim sum.not_neutral_contains_not_neutral) auto
+      thus "q \<in> (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
+        by auto
+    qed
+    thus "finite {x. (\<Sum>X\<in>Roots_ms. of_int (int (count (prime_factorization (Q X)) x) *
+             \<Prod>\<^sub># (image_mset \<beta>' X)) * sum exp {z::complex. ipoly x z = 0}) \<noteq> 0}"
+      by (rule finite_subset) auto
+  qed (simp_all add: sum_distrib_right)
+  also have "\<dots> = (\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp x))"
+    by (intro Sum_any.expand_superset finite_subset[OF supp_\<beta>'']) auto
+  finally have "(\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp (x :: complex))) = 0"
+    by simp
 
-  show False
-    sorry
+  moreover have "(\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp (x :: complex))) \<noteq> 0"
+  proof (rule Hermite_Lindemann_aux1)
+    show "finite {q. \<beta>'' q \<noteq> 0}"
+      by (rule finite_subset[OF supp_\<beta>'']) auto
+  next
+    show "pairwise Rings.coprime {q. \<beta>'' q \<noteq> 0}"
+    proof (rule pairwiseI, clarify)
+      fix p q assume pq: "p \<noteq> q" "\<beta>'' p \<noteq> 0" "\<beta>'' q \<noteq> 0"
+      hence "prime p" "prime q"
+        using supp_\<beta>'' Q(2) by auto
+      with pq show "Rings.coprime p q"
+        by (simp add: primes_coprime)
+    qed
+  next
+    fix q :: "int poly"
+    assume q: "q \<in> {q. \<beta>'' q \<noteq> 0}"
+    also note supp_\<beta>''
+    finally obtain X where X: "X \<in> Roots_ms" "q \<in> prime_factors (Q X)"
+      by blast
+    show "irreducible q"
+      using X by (intro prime_elem_imp_irreducible prime_imp_prime_elem) auto
+    show "Polynomial.degree q > 0" using X
+      by (intro content_1_imp_nonconstant_prime_factors[OF Q(2)[of X]])
+  qed (use \<open>{x. \<beta>'' x \<noteq> 0} \<noteq> {}\<close> in auto)
+
+  ultimately show False by contradiction
 qed
 
 theorem Hermite_Lindemann:
