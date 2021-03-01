@@ -11,16 +11,6 @@ imports
 (*"Polynomial_Factorization.Square_Free_Factorization"*)
 begin
 
-lemma bij_betw_permutes_compose_left:
-  assumes "\<pi> permutes A"
-  shows   "bij_betw (\<lambda>\<sigma>. \<pi> \<circ> \<sigma>) {\<sigma>. \<sigma> permutes A} {\<sigma>. \<sigma> permutes A}"
-proof (rule bij_betwI)
-  show "(\<circ>) \<pi> \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
-    by (auto intro: permutes_compose assms)
-  show "(\<circ>) (inv_into UNIV \<pi>) \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
-    by (auto intro: permutes_compose assms permutes_inv)
-qed (use permutes_inverses[OF assms] in auto)
-
 subsection \<open>The lexicographic ordering on complex numbers\<close>
 
 definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
@@ -73,6 +63,27 @@ qed
 
 subsection \<open>Auxiliary facts about univariate polynomials\<close>
 
+instance poly :: ("{idom_divide,normalization_semidom_multiplicative,factorial_ring_gcd,
+                    semiring_gcd_mult_normalize}") factorial_semiring_multiplicative ..
+
+lemma lead_coeff_prod_mset:
+  fixes A :: "'a::{comm_semiring_1, semiring_no_zero_divisors} poly multiset"
+  shows "Polynomial.lead_coeff (prod_mset A) = prod_mset (image_mset Polynomial.lead_coeff A)"
+  by (induction A) (auto simp: Polynomial.lead_coeff_mult)
+
+lemma content_normalize [simp]:
+  fixes p :: "'a :: {factorial_semiring, idom_divide, semiring_gcd, normalization_semidom_multiplicative} poly"
+  shows "content (normalize p) = content p"
+proof (cases "p = 0")
+  case [simp]: False
+  have "content p = content (unit_factor p * normalize p)"
+    by simp
+  also have "\<dots> = content (unit_factor p) * content (normalize p)"
+    by (rule content_mult)
+  also have "content (unit_factor p) = 1"
+    by (auto simp: unit_factor_poly_def)
+  finally show ?thesis by simp
+qed auto
 
 lemma rat_to_normalized_int_poly_exists:
   fixes p :: "rat poly"
@@ -498,7 +509,63 @@ proof -
   thus ?thesis
     using assms by (intro mset_subset_eqI) (auto intro: dvd_imp_order_le)
 qed
-  
+
+lemma abs_prod_mset: "\<bar>prod_mset (A :: 'a :: idom_abs_sgn multiset)\<bar> = prod_mset (image_mset abs A)"
+  by (induction A) (auto simp: abs_mult)
+
+lemma content_1_imp_nonconstant_prime_factors:
+  assumes "content (p :: int poly) = 1" and "q \<in> prime_factors p"
+  shows   "Polynomial.degree q > 0"
+proof -
+  let ?d = "Polynomial.degree :: int poly \<Rightarrow> nat"
+  let ?lc = "Polynomial.lead_coeff :: int poly \<Rightarrow> int"
+  define P where "P = prime_factorization p"
+  define P1 where "P1 = filter_mset (\<lambda>p. ?d p = 0) P"
+  define P2 where "P2 = filter_mset (\<lambda>p. ?d p > 0) P"
+  have [simp]: "p \<noteq> 0"
+    using assms by auto
+  have "1 = content (normalize p)"
+    using assms by simp
+  also have "normalize p = prod_mset P"
+    unfolding P_def by (rule prod_mset_prime_factorization [symmetric]) auto
+  also have "P = filter_mset (\<lambda>p. ?d p = 0) P + filter_mset (\<lambda>p. ?d p > 0) P"
+    by (induction P) auto
+  also have "prod_mset \<dots> = prod_mset P1 * prod_mset P2"
+    unfolding P1_def P2_def by (subst prod_mset.union) auto
+  also have "content \<dots> = content (prod_mset P1) * content (prod_mset P2)"
+    unfolding content_mult ..
+  also have "image_mset id P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
+    by (intro image_mset_cong) (auto simp: P1_def elim!: degree_eq_zeroE)
+  hence "P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
+    by simp
+  also have "content (prod_mset \<dots>) = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
+    by (simp add: content_prod_mset multiset.map_comp o_def abs_prod_mset)
+  finally have "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> * content (prod_mset P2) = 1" ..
+  hence "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> dvd 1"
+    unfolding dvd_def by metis
+
+  have "set_mset P1 = {}"
+  proof (rule ccontr)
+    assume "set_mset P1 \<noteq> {}"
+    then obtain q where q: "q \<in># P1"
+      by blast
+    have "\<bar>?lc q\<bar> dvd (\<Prod>q\<in>#P1. \<bar>?lc q\<bar>)"
+      by (rule dvd_prod_mset) (use q in auto)
+    also have "\<dots> = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
+      by (simp add: abs_prod_mset multiset.map_comp o_def)
+    also have "\<dots> dvd 1"
+      by fact
+    finally have "is_unit (?lc q)"
+      by simp
+    hence "is_unit q"
+      using q unfolding P1_def by (auto elim!: degree_eq_zeroE)
+    moreover have "prime q"
+      using q unfolding P1_def P_def by auto
+    ultimately show False by auto
+  qed
+  with assms show ?thesis
+    by (auto simp: P1_def P_def)
+qed
 
 
 subsection \<open>Auxiliary facts about multivariate polynomials\<close>
@@ -701,6 +768,125 @@ qed
 
 
 subsection \<open>Miscellaneous facts\<close>
+
+lemma bij_betw_permutes_compose_left:
+  assumes "\<pi> permutes A"
+  shows   "bij_betw (\<lambda>\<sigma>. \<pi> \<circ> \<sigma>) {\<sigma>. \<sigma> permutes A} {\<sigma>. \<sigma> permutes A}"
+proof (rule bij_betwI)
+  show "(\<circ>) \<pi> \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
+    by (auto intro: permutes_compose assms)
+  show "(\<circ>) (inv_into UNIV \<pi>) \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
+    by (auto intro: permutes_compose assms permutes_inv)
+qed (use permutes_inverses[OF assms] in auto)
+
+lemma finite_multisets_of_size:
+  assumes "finite A"
+  shows   "finite {X. set_mset X \<subseteq> A \<and> size X = n}"
+proof (rule finite_subset)
+  show "{X. set_mset X \<subseteq> A \<and> size X = n} \<subseteq> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
+  proof
+    fix X assume X: "X \<in> {X. set_mset X \<subseteq> A \<and> size X = n}"
+    obtain xs where [simp]: "X = mset xs"
+      by (metis ex_mset)
+    thus "X \<in> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
+      using X by auto
+  qed
+next
+  show "finite (mset ` {xs. set xs \<subseteq> A \<and> length xs = n})"
+    by (intro finite_imageI finite_lists_length_eq assms)
+qed
+
+lemma sum_mset_image_mset_sum_mset_image_mset:
+   "sum_mset (image_mset g (sum_mset (image_mset f A))) =
+    sum_mset (image_mset (\<lambda>x. sum_mset (image_mset g (f x))) A)"
+  by (induction A) auto
+
+lemma sum_mset_image_mset_singleton: "sum_mset (image_mset (\<lambda>x. {#f x#}) A) = image_mset f A"
+  by (induction A) auto
+
+lemma sum_mset_conv_sum:
+  "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
+proof (induction A rule: full_multiset_induct)
+  case (less A)
+  show ?case
+  proof (cases "A = {#}")
+    case False
+    then obtain x where x: "x \<in># A"
+      by auto
+    define n where "n = count A x"
+    define A' where "A' = filter_mset (\<lambda>y. y \<noteq> x) A"
+    have A_eq: "A = replicate_mset n x + A'"
+      by (intro multiset_eqI) (auto simp: A'_def n_def)
+    have [simp]: "x \<notin># A'" "count A' x = 0"
+      by (auto simp: A'_def)
+    have "n \<noteq> 0"
+      using x by (auto simp: n_def)
+    
+    have "sum_mset (image_mset f A) = of_nat n * f x + sum_mset (image_mset f A')"
+      by (simp add: A_eq)
+    also have "A' \<subset># A"
+      unfolding A'_def using x by (simp add: filter_mset_eq_conv subset_mset_def)
+    with less.IH have "sum_mset (image_mset f A') = (\<Sum>x\<in>set_mset A'. of_nat (count A' x) * f x)"
+      by simp
+    also have "\<dots> = (\<Sum>x\<in>set_mset A'. of_nat (count A x) * f x)"
+      by (intro sum.cong) (auto simp: A_eq)
+    also have "of_nat n * f x + \<dots> = (\<Sum>x\<in>insert x (set_mset A'). of_nat (count A x) * f x)"
+      by (subst sum.insert) (auto simp: A_eq)
+    also from \<open>n \<noteq> 0\<close> have "insert x (set_mset A') = set_mset A"
+      by (auto simp: A_eq)
+    finally show ?thesis .
+  qed auto
+qed
+
+lemma sum_mset_conv_Sum_any:
+  "sum_mset (image_mset f A) = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
+proof -
+  have "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
+    by (rule sum_mset_conv_sum)
+  also have "\<dots> = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
+  proof (rule Sum_any.expand_superset [symmetric])
+    show "{x. of_nat (count A x) * f x \<noteq> 0} \<subseteq> set_mset A"
+    proof
+      fix x assume "x \<in> {x. of_nat (count A x) * f x \<noteq> 0}"
+      hence "count A x \<noteq> 0"
+        by (intro notI) auto
+      thus "x \<in># A"
+        by auto
+    qed
+  qed auto
+  finally show ?thesis .
+qed
+
+lemma Sum_any_sum_swap:
+  assumes "finite A" "\<And>y. finite {x. f x y \<noteq> 0}"
+  shows   "Sum_any (\<lambda>x. sum (f x) A) = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
+proof -
+  have "Sum_any (\<lambda>x. sum (f x) A) = Sum_any (\<lambda>x. Sum_any (\<lambda>y. f x y when y \<in> A))"
+    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
+  also have "\<dots> = Sum_any (\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A))"
+    by (intro Sum_any.swap[of "(\<Union>y\<in>A. {x. f x y \<noteq> 0}) \<times> A"] finite_SigmaI finite_UN_I assms) auto
+  also have "(\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A)) = (\<lambda>y. Sum_any (\<lambda>x. f x y) when y \<in> A)"
+    by (auto simp: when_def)
+  also have "Sum_any \<dots> = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
+    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
+  finally show ?thesis .
+qed
+
+lemma in_Ints_imp_algebraic [simp, intro]: "x \<in> \<int> \<Longrightarrow> algebraic x"
+  by (intro algebraic_int_imp_algebraic int_imp_algebraic_int)
+
+lemma in_Rats_imp_algebraic [simp, intro]: "x \<in> \<rat> \<Longrightarrow> algebraic x"
+  by (auto elim!: Rats_cases' intro: algebraic_div)
+
+lemma algebraic_uminus_iff [simp]: "algebraic (-x) \<longleftrightarrow> algebraic x"
+  using algebraic_uminus[of x] algebraic_uminus[of "-x"] by auto
+
+lemma algebraic_0 [simp]: "algebraic (0 :: 'a :: field_char_0)"
+  and algebraic_1 [simp]: "algebraic (1 :: 'a :: field_char_0)"
+  by auto  
+
+lemma algebraic_ii [simp]: "algebraic \<i>"
+  by (intro algebraic_int_imp_algebraic) auto
 
 lemma algebraic_int_fact [simp, intro]: "algebraic_int (fact n)"
   by (intro int_imp_algebraic_int fact_in_Ints)
@@ -2139,177 +2325,8 @@ proof
     by simp
 qed
 
-lemma finite_multisets_of_size:
-  assumes "finite A"
-  shows   "finite {X. set_mset X \<subseteq> A \<and> size X = n}"
-proof (rule finite_subset)
-  show "{X. set_mset X \<subseteq> A \<and> size X = n} \<subseteq> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
-  proof
-    fix X assume X: "X \<in> {X. set_mset X \<subseteq> A \<and> size X = n}"
-    obtain xs where [simp]: "X = mset xs"
-      by (metis ex_mset)
-    thus "X \<in> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
-      using X by auto
-  qed
-next
-  show "finite (mset ` {xs. set xs \<subseteq> A \<and> length xs = n})"
-    by (intro finite_imageI finite_lists_length_eq assms)
-qed
 
-instance poly :: ("{idom_divide,normalization_semidom_multiplicative,factorial_ring_gcd,
-                    semiring_gcd_mult_normalize}") factorial_semiring_multiplicative ..
-
-lemma lead_coeff_prod_mset:
-  fixes A :: "'a::{comm_semiring_1, semiring_no_zero_divisors} poly multiset"
-  shows "Polynomial.lead_coeff (prod_mset A) = prod_mset (image_mset Polynomial.lead_coeff A)"
-  by (induction A) (auto simp: Polynomial.lead_coeff_mult)
-
-lemma content_normalize [simp]:
-  fixes p :: "'a :: {factorial_semiring, idom_divide, semiring_gcd, normalization_semidom_multiplicative} poly"
-  shows "content (normalize p) = content p"
-proof (cases "p = 0")
-  case [simp]: False
-  have "content p = content (unit_factor p * normalize p)"
-    by simp
-  also have "\<dots> = content (unit_factor p) * content (normalize p)"
-    by (rule content_mult)
-  also have "content (unit_factor p) = 1"
-    by (auto simp: unit_factor_poly_def)
-  finally show ?thesis by simp
-qed auto
-
-lemma abs_prod_mset: "\<bar>prod_mset (A :: 'a :: idom_abs_sgn multiset)\<bar> = prod_mset (image_mset abs A)"
-  by (induction A) (auto simp: abs_mult)
-
-lemma content_1_imp_nonconstant_prime_factors:
-  assumes "content (p :: int poly) = 1" and "q \<in> prime_factors p"
-  shows   "Polynomial.degree q > 0"
-proof -
-  let ?d = "Polynomial.degree :: int poly \<Rightarrow> nat"
-  let ?lc = "Polynomial.lead_coeff :: int poly \<Rightarrow> int"
-  define P where "P = prime_factorization p"
-  define P1 where "P1 = filter_mset (\<lambda>p. ?d p = 0) P"
-  define P2 where "P2 = filter_mset (\<lambda>p. ?d p > 0) P"
-  have [simp]: "p \<noteq> 0"
-    using assms by auto
-  have "1 = content (normalize p)"
-    using assms by simp
-  also have "normalize p = prod_mset P"
-    unfolding P_def by (rule prod_mset_prime_factorization [symmetric]) auto
-  also have "P = filter_mset (\<lambda>p. ?d p = 0) P + filter_mset (\<lambda>p. ?d p > 0) P"
-    by (induction P) auto
-  also have "prod_mset \<dots> = prod_mset P1 * prod_mset P2"
-    unfolding P1_def P2_def by (subst prod_mset.union) auto
-  also have "content \<dots> = content (prod_mset P1) * content (prod_mset P2)"
-    unfolding content_mult ..
-  also have "image_mset id P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
-    by (intro image_mset_cong) (auto simp: P1_def elim!: degree_eq_zeroE)
-  hence "P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
-    by simp
-  also have "content (prod_mset \<dots>) = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
-    by (simp add: content_prod_mset multiset.map_comp o_def abs_prod_mset)
-  finally have "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> * content (prod_mset P2) = 1" ..
-  hence "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> dvd 1"
-    unfolding dvd_def by metis
-
-  have "set_mset P1 = {}"
-  proof (rule ccontr)
-    assume "set_mset P1 \<noteq> {}"
-    then obtain q where q: "q \<in># P1"
-      by blast
-    have "\<bar>?lc q\<bar> dvd (\<Prod>q\<in>#P1. \<bar>?lc q\<bar>)"
-      by (rule dvd_prod_mset) (use q in auto)
-    also have "\<dots> = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
-      by (simp add: abs_prod_mset multiset.map_comp o_def)
-    also have "\<dots> dvd 1"
-      by fact
-    finally have "is_unit (?lc q)"
-      by simp
-    hence "is_unit q"
-      using q unfolding P1_def by (auto elim!: degree_eq_zeroE)
-    moreover have "prime q"
-      using q unfolding P1_def P_def by auto
-    ultimately show False by auto
-  qed
-  with assms show ?thesis
-    by (auto simp: P1_def P_def)
-qed
-
-lemma sum_mset_image_mset_sum_mset_image_mset:
-   "sum_mset (image_mset g (sum_mset (image_mset f A))) =
-    sum_mset (image_mset (\<lambda>x. sum_mset (image_mset g (f x))) A)"
-  by (induction A) auto
-
-lemma sum_mset_image_mset_singleton: "sum_mset (image_mset (\<lambda>x. {#f x#}) A) = image_mset f A"
-  by (induction A) auto
-
-lemma sum_mset_conv_sum:
-  "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
-proof (induction A rule: full_multiset_induct)
-  case (less A)
-  show ?case
-  proof (cases "A = {#}")
-    case False
-    then obtain x where x: "x \<in># A"
-      by auto
-    define n where "n = count A x"
-    define A' where "A' = filter_mset (\<lambda>y. y \<noteq> x) A"
-    have A_eq: "A = replicate_mset n x + A'"
-      by (intro multiset_eqI) (auto simp: A'_def n_def)
-    have [simp]: "x \<notin># A'" "count A' x = 0"
-      by (auto simp: A'_def)
-    have "n \<noteq> 0"
-      using x by (auto simp: n_def)
-    
-    have "sum_mset (image_mset f A) = of_nat n * f x + sum_mset (image_mset f A')"
-      by (simp add: A_eq)
-    also have "A' \<subset># A"
-      unfolding A'_def using x by (simp add: filter_mset_eq_conv subset_mset_def)
-    with less.IH have "sum_mset (image_mset f A') = (\<Sum>x\<in>set_mset A'. of_nat (count A' x) * f x)"
-      by simp
-    also have "\<dots> = (\<Sum>x\<in>set_mset A'. of_nat (count A x) * f x)"
-      by (intro sum.cong) (auto simp: A_eq)
-    also have "of_nat n * f x + \<dots> = (\<Sum>x\<in>insert x (set_mset A'). of_nat (count A x) * f x)"
-      by (subst sum.insert) (auto simp: A_eq)
-    also from \<open>n \<noteq> 0\<close> have "insert x (set_mset A') = set_mset A"
-      by (auto simp: A_eq)
-    finally show ?thesis .
-  qed auto
-qed
-
-lemma sum_mset_conv_Sum_any:
-  "sum_mset (image_mset f A) = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
-proof -
-  have "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
-    by (rule sum_mset_conv_sum)
-  also have "\<dots> = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
-  proof (rule Sum_any.expand_superset [symmetric])
-    show "{x. of_nat (count A x) * f x \<noteq> 0} \<subseteq> set_mset A"
-    proof
-      fix x assume "x \<in> {x. of_nat (count A x) * f x \<noteq> 0}"
-      hence "count A x \<noteq> 0"
-        by (intro notI) auto
-      thus "x \<in># A"
-        by auto
-    qed
-  qed auto
-  finally show ?thesis .
-qed
-
-lemma Sum_any_sum_swap:
-  assumes "finite A" "\<And>y. finite {x. f x y \<noteq> 0}"
-  shows   "Sum_any (\<lambda>x. sum (f x) A) = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
-proof -
-  have "Sum_any (\<lambda>x. sum (f x) A) = Sum_any (\<lambda>x. Sum_any (\<lambda>y. f x y when y \<in> A))"
-    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
-  also have "\<dots> = Sum_any (\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A))"
-    by (intro Sum_any.swap[of "(\<Union>y\<in>A. {x. f x y \<noteq> 0}) \<times> A"] finite_SigmaI finite_UN_I assms) auto
-  also have "(\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A)) = (\<lambda>y. Sum_any (\<lambda>x. f x y) when y \<in> A)"
-    by (auto simp: when_def)
-  also have "Sum_any \<dots> = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
-    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
-  finally show ?thesis .
-qed
+subsection \<open>Removing the restriction of full sets of conjugates\<close>
 
 lemma Hermite_Lindemann_aux2:
   fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
@@ -2809,13 +2826,59 @@ proof (rule ccontr)
   ultimately show False by contradiction
 qed
 
+
+subsection \<open>Removing the restriction to integer coefficients\<close>
+
 theorem Hermite_Lindemann:
-  fixes c:: "complex \<Rightarrow> complex"
+  fixes c :: "complex \<Rightarrow> complex"
   assumes [intro]: "finite X"
   assumes alg1: "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
   assumes alg2: "\<And>x. x \<in> X \<Longrightarrow> algebraic (c x)"
   assumes sum0: "(\<Sum>x\<in>X. c x * exp \<alpha>) = 0"
   shows   "\<forall>x\<in>X. c x = 0"
   sorry
+
+corollary Hermite_Lindemann_list:
+  fixes xs :: "(complex \<times> complex) list"
+  assumes alg:      "\<forall>(x,y)\<in>set xs. algebraic x \<and> algebraic y"
+  assumes distinct: "distinct (map snd xs)"
+  assumes sum0: "(\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>) = 0"
+  shows   "\<forall>c\<in>fst`set xs. c = 0"
+  sorry
+
+
+subsection \<open>Corollaries\<close>
+
+lemma algebraic_exp_complex_iff:
+  assumes "algebraic x"
+  shows   "algebraic (exp x :: complex) \<longleftrightarrow> x = 0"
+  using Hermite_Lindemann_list[of "[(1, x), (-exp x, 0)]"] assms by auto
+
+lemma complex_logarithm_of_algebraic_is_transcendental:
+  assumes "algebraic x" "exp y = (x :: complex)" "x \<noteq> 1"
+  shows   "\<not>algebraic y"
+  using algebraic_exp_complex_iff[of y] assms by auto
+
+lemma Ln_of_algebraic_is_transcendental:
+  assumes "algebraic x" "x \<noteq> 0" "x \<noteq> 1"
+  shows   "\<not>algebraic (Ln x)"
+  by (rule complex_logarithm_of_algebraic_is_transcendental) (use assms in auto)
+
+lemma exp_1_complex_transcendental: "\<not>algebraic (exp 1 :: complex)"
+  by (subst algebraic_exp_complex_iff) auto
+
+lemma pi_transcendental: "\<not>algebraic pi"
+proof
+  assume "algebraic pi"
+  hence "algebraic (of_real pi)"
+    by (simp only: algebraic_of_real_iff)
+  hence "algebraic (\<i> * of_real pi)"
+    by (intro algebraic_times) auto
+  hence "\<not>algebraic (exp (\<i> * of_real pi))"
+    by (subst algebraic_exp_complex_iff) auto
+  also have "exp (\<i> * of_real pi) = -1"
+    by (rule exp_pi_i')
+  finally show False by simp
+qed
 
 end
