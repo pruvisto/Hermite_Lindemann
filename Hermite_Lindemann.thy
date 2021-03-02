@@ -2,1364 +2,19 @@
   File:     Hermite_Lindemann.thy
   Author:   Manuel Eberl, TU München
 *)
-section \<open>The Hermite--Lindemann Transcendence Theorem\<close>
+section \<open>The Hermite--Lindemann--Weierstraß Transcendence Theorem\<close>
 theory Hermite_Lindemann
 imports 
   Pi_Transcendental.Pi_Transcendental
   Algebraic_Numbers.Algebraic_Numbers
-  "Power_Sum_Polynomials.Power_Sum_Polynomials_Library"
-(*"Polynomial_Factorization.Square_Free_Factorization"*)
+  Min_Int_Poly
+  Complex_Lexorder
+  More_Polynomial_HLW
+  More_Multivariate_Polynomial_HLW
+  More_Algebraic_Numbers_HLW
+  Misc_HLW
+  Algebraic_Integer_Divisibility
 begin
-
-subsection \<open>The lexicographic ordering on complex numbers\<close>
-
-definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
-  "less_eq_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x \<le> Im y"
-
-definition less_complex_lex (infix "<\<^sub>\<complex>" 50) where
-  "less_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x < Im y"
-
-interpretation complex_lex: linorder less_eq_complex_lex less_complex_lex
-  by standard (auto simp: less_eq_complex_lex_def less_complex_lex_def complex_eq_iff)
-
-lemmas [trans] =
-  complex_lex.order.trans complex_lex.less_le_trans
-  complex_lex.less_trans complex_lex.le_less_trans
-
-lemma add_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c \<le>\<^sub>\<complex> d \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + d"
-  and add_right_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + c"
-  and add_left_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c + a \<le>\<^sub>\<complex> c + b"
-  and add_strict_right_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> a + c <\<^sub>\<complex> b + c"
-  and add_strict_left_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> c + a <\<^sub>\<complex> c + b"
-  by (auto simp: less_eq_complex_lex_def less_complex_lex_def)
-
-lemma (in ordered_comm_monoid_add) sum_mono_complex_lex:
-  "(\<And>i. i\<in>K \<Longrightarrow> f i \<le>\<^sub>\<complex> g i) \<Longrightarrow> (\<Sum>i\<in>K. f i) \<le>\<^sub>\<complex> (\<Sum>i\<in>K. g i)"
-  by (induct K rule: infinite_finite_induct) (use add_mono_complex_lex in auto)
-
-lemma sum_strict_mono_ex1_complex_lex:
-  fixes f g :: "'i \<Rightarrow> complex"
-  assumes "finite A"
-    and "\<forall>x\<in>A. f x \<le>\<^sub>\<complex> g x"
-    and "\<exists>a\<in>A. f a <\<^sub>\<complex> g a"
-  shows "sum f A <\<^sub>\<complex> sum g A"
-proof-
-  from assms(3) obtain a where a: "a \<in> A" "f a <\<^sub>\<complex> g a" by blast
-  have "sum f A = sum f ((A - {a}) \<union> {a})"
-    by (simp add: insert_absorb[OF \<open>a \<in> A\<close>])
-  also have "\<dots> = sum f (A - {a}) + sum f {a}"
-    using \<open>finite A\<close> by (subst sum.union_disjoint) auto
-  also have "\<dots> \<le>\<^sub>\<complex> sum g (A - {a}) + sum f {a}"
-    by (intro add_mono_complex_lex sum_mono_complex_lex) (simp_all add: assms)
-  also have "\<dots> <\<^sub>\<complex> sum g (A - {a}) + sum g {a}"
-    using a by (intro add_strict_left_mono_complex_lex) auto
-  also have "\<dots> = sum g ((A - {a}) \<union> {a})"
-    using \<open>finite A\<close> by (subst sum.union_disjoint[symmetric]) auto
-  also have "\<dots> = sum g A" by (simp add: insert_absorb[OF \<open>a \<in> A\<close>])
-  finally show ?thesis
-    by simp
-qed
-
-
-subsection \<open>Auxiliary facts about univariate polynomials\<close>
-
-instance poly :: ("{idom_divide,normalization_semidom_multiplicative,factorial_ring_gcd,
-                    semiring_gcd_mult_normalize}") factorial_semiring_multiplicative ..
-
-lemma lead_coeff_prod_mset:
-  fixes A :: "'a::{comm_semiring_1, semiring_no_zero_divisors} poly multiset"
-  shows "Polynomial.lead_coeff (prod_mset A) = prod_mset (image_mset Polynomial.lead_coeff A)"
-  by (induction A) (auto simp: Polynomial.lead_coeff_mult)
-
-lemma content_normalize [simp]:
-  fixes p :: "'a :: {factorial_semiring, idom_divide, semiring_gcd, normalization_semidom_multiplicative} poly"
-  shows "content (normalize p) = content p"
-proof (cases "p = 0")
-  case [simp]: False
-  have "content p = content (unit_factor p * normalize p)"
-    by simp
-  also have "\<dots> = content (unit_factor p) * content (normalize p)"
-    by (rule content_mult)
-  also have "content (unit_factor p) = 1"
-    by (auto simp: unit_factor_poly_def)
-  finally show ?thesis by simp
-qed auto
-
-lemma rat_to_normalized_int_poly_exists:
-  fixes p :: "rat poly"
-  assumes "p \<noteq> 0"
-  obtains q lc where "p = Polynomial.smult lc (of_int_poly q)" "lc > 0" "content q = 1"
-proof -
-  define lc where "lc = fst (rat_to_normalized_int_poly p)"
-  define q where "q = snd (rat_to_normalized_int_poly p)"
-  have eq: "rat_to_normalized_int_poly p = (lc, q)"
-    by (simp add: lc_def q_def)
-  show ?thesis
-    using rat_to_normalized_int_poly[OF eq] assms
-    by (intro that[of lc q]) auto
-qed
-
-lemma irreducible_imp_squarefree:
-  assumes "irreducible p"
-  shows   "squarefree p"
-proof (rule squarefreeI)
-  fix q assume "q ^ 2 dvd p"
-  then obtain r where qr: "p = q ^ 2 * r"
-    by (elim dvdE)
-  have "q dvd 1 \<or> q * r dvd 1"
-    by (intro irreducibleD[OF assms]) (use qr in \<open>simp_all add: power2_eq_square mult_ac\<close>)
-  thus "q dvd 1"
-    by (meson dvd_mult_left)
-qed
-
-lemma squarefree_imp_rsquarefree:
-  fixes p :: "'a :: idom poly"
-  assumes "squarefree p"
-  shows   "rsquarefree p"
-  unfolding rsquarefree_def
-proof (intro conjI allI)
-  fix x :: 'a
-  have "order x p < 2"
-  proof (rule ccontr)
-    assume "\<not>(order x p < 2)"
-    hence "[:-x, 1:] ^ 2 dvd p"
-      by (subst order_divides) auto
-    from assms and this have "[:-x, 1:] dvd 1"
-      by (rule squarefreeD)
-    hence "Polynomial.degree [:-x, 1:] \<le> Polynomial.degree (1 :: 'a poly)"
-      by (rule dvd_imp_degree_le) auto
-    thus False by simp
-  qed
-  thus "order x p = 0 \<or> order x p = 1"
-    by linarith
-qed (use assms in auto)
-
-lemma squarefree_imp_coprime_pderiv:
-  fixes p :: "'a :: {factorial_ring_gcd,semiring_gcd_mult_normalize,semiring_char_0} poly"
-  assumes "squarefree p" and "content p = 1"
-  shows   "Rings.coprime p (pderiv p)"
-proof (rule coprimeI_primes)
-  fix d assume d: "prime d" "d dvd p" "d dvd pderiv p"
-  show False
-  proof (cases "Polynomial.degree d = 0")
-    case deg: False
-    obtain q where dq: "p = d * q"
-      using d by (elim dvdE)
-    have \<open>d dvd q * pderiv d\<close>
-      using d by (simp add: dq pderiv_mult dvd_add_right_iff)
-    moreover have "\<not>d dvd pderiv d"
-    proof
-      assume "d dvd pderiv d"
-      hence "Polynomial.degree d \<le> Polynomial.degree (pderiv d)"
-        using d deg by (intro dvd_imp_degree_le) (auto simp: pderiv_eq_0_iff)
-      hence "Polynomial.degree d = 0"
-        by (subst (asm) degree_pderiv) auto
-      thus False using deg by contradiction
-    qed
-    ultimately have "d dvd q"
-      using d(1) by (simp add: prime_dvd_mult_iff)
-    hence "d ^ 2 dvd p"
-      by (auto simp: dq power2_eq_square)
-    from assms(1) and this have "is_unit d"
-      by (rule squarefreeD)
-    thus False using \<open>prime d\<close> by auto
-  next
-    case True
-    then obtain d' where [simp]: "d = [:d':]"
-      by (elim degree_eq_zeroE)
-    from d have "d' dvd content p"
-      by (simp add: const_poly_dvd_iff_dvd_content)
-    with assms and prime_imp_prime_elem[OF \<open>prime d\<close>] show False
-      by auto
-  qed
-qed (use assms in auto)
-
-lemma irreducible_imp_coprime_pderiv:
-  fixes p :: "'a :: {idom_divide,semiring_char_0} poly"
-  assumes "irreducible p" "Polynomial.degree p \<noteq> 0"
-  shows   "Rings.coprime p (pderiv p)"
-proof (rule Rings.coprimeI)
-  fix d assume d: "d dvd p" "d dvd pderiv p"
-  obtain q where dq: "p = d * q"
-    using d by (elim dvdE)
-  have "is_unit d \<or> is_unit q"
-    using assms dq by (auto simp: irreducible_def)
-  thus "is_unit d"
-  proof
-    assume unit: "is_unit q"
-    with d have "p dvd pderiv p"
-      using algebraic_semidom_class.mult_unit_dvd_iff dq by blast
-    hence "Polynomial.degree p = 0"
-      by (meson not_dvd_pderiv)
-    with assms(2) show ?thesis by contradiction
-  qed
-qed
-
-lemma poly_gcd_eq_0I:
-  assumes "poly p x = 0" "poly q x = 0"
-  shows   "poly (gcd p q) x = 0"
-  using assms by (simp add: poly_eq_0_iff_dvd)
-
-lemma poly_eq_0_coprime:
-  assumes "Rings.coprime p q" "p \<noteq> 0" "q \<noteq> 0"
-  shows   "poly p x \<noteq> 0 \<or> poly q x \<noteq> 0"
-proof -
-  have False if "poly p x = 0" "poly q x = 0"
-  proof -
-    have "[:-x, 1:] dvd p" "[:-x, 1:] dvd q"
-      using that by (simp_all add: poly_eq_0_iff_dvd)
-    hence "[:-x, 1:] dvd 1"
-      using \<open>Rings.coprime p q\<close> by (meson not_coprimeI)
-    thus False
-      by (simp add: is_unit_poly_iff)
-  qed
-  thus ?thesis
-    by blast
-qed
-
-lemma coprime_of_int_polyI:
-  assumes "Rings.coprime p q"
-  shows   "Rings.coprime (of_int_poly p) (of_int_poly q :: 'a :: {field_char_0,field_gcd} poly)"
-  using assms gcd_of_int_poly[of p q, where ?'a = 'a] unfolding coprime_iff_gcd_eq_1 by simp
-
-lemma irreducible_imp_rsquarefree_of_int_poly:
-  fixes p :: "int poly"
-  assumes "irreducible p" and "Polynomial.degree p > 0"
-  shows   "rsquarefree (of_int_poly p :: 'a :: {field_gcd, field_char_0} poly)"
-proof -
-  {
-    fix x :: 'a
-    assume x: "poly (of_int_poly p) x = 0" "poly (pderiv (of_int_poly p)) x = 0"
-    define d where "d = gcd (of_int_poly p) (pderiv (of_int_poly p) :: 'a poly)"
-    have "poly d x = 0"
-      using x unfolding d_def by (intro poly_gcd_eq_0I) auto
-    moreover have "d \<noteq> 0"
-      using assms by (auto simp: d_def)
-    ultimately have "0 < Polynomial.degree d"
-      by (intro Nat.gr0I) (auto elim!: degree_eq_zeroE)
-    also have "Polynomial.degree d = Polynomial.degree (gcd p (pderiv p))"
-      unfolding d_def of_int_hom.map_poly_pderiv[symmetric] gcd_of_int_poly by simp
-    finally have deg: "\<dots> > 0" .
-  
-    have "gcd p (pderiv p) dvd p"
-      by auto
-    from irreducibleD'[OF assms(1) this] and deg have "p dvd gcd p (pderiv p)"
-      by auto
-    also have "\<dots> dvd pderiv p"
-      by auto
-    finally have "Polynomial.degree p = 0"
-      by auto
-    with assms have False by simp
-  }
-  thus ?thesis by (auto simp: rsquarefree_roots)
-qed
-
-lemma squarefree_of_int_polyI:
-  assumes "squarefree p" "content p = 1"
-  shows   "squarefree (of_int_poly p :: 'a :: {field_char_0,field_gcd} poly)"
-proof -
-  have "Rings.coprime p (pderiv p)"
-    by (rule squarefree_imp_coprime_pderiv) fact+
-  hence "Rings.coprime (of_int_poly p :: 'a poly) (of_int_poly (pderiv p))"
-    by (rule coprime_of_int_polyI)
-  also have "of_int_poly (pderiv p) = pderiv (of_int_poly p :: 'a poly)"
-    by (simp add: of_int_hom.map_poly_pderiv)
-  finally show ?thesis
-    using coprime_pderiv_imp_squarefree by blast
-qed
-
-lemma higher_pderiv_pcompose_linear:
-   "(pderiv ^^ n) (pcompose p [:0, c:]) =
-    Polynomial.smult (c ^ n) (pcompose ((pderiv ^^ n) p) [:0, c:])"
-  by (induction n)  (simp_all add: pderiv_pcompose pderiv_smult pderiv_pCons pcompose_smult mult_ac)
-
-lemma poly_poly_eq:
-  "poly (poly p [:x:]) y = poly (eval_poly (\<lambda>p. [:poly p y:]) p [:0, 1:]) x"
-  by (induction p) (auto simp: eval_poly_def)
-
-lemma poly_poly_poly_y_x [simp]:
-  fixes p :: "'a :: idom poly poly"
-  shows "poly (poly (poly_y_x p) [:y:]) x = poly (poly p [:x:]) y"
-proof (induction p)
-  case (pCons a p)
-  have "poly (poly (poly_y_x (pCons a p)) [:y:]) x = 
-          poly a y + poly (poly (map_poly (pCons 0) (poly_y_x p)) [:y:]) x"
-    by (simp add: poly_y_x_pCons eval_poly_def)
-  also have "pCons 0 = (\<lambda>p::'a poly. Polynomial.monom 1 1 * p)"
-    by (simp add: Polynomial.monom_altdef)
-  also have "map_poly \<dots> (poly_y_x p) = Polynomial.smult (Polynomial.monom 1 1) (poly_y_x p)"
-    by (simp add: smult_conv_map_poly)
-  also have "poly \<dots> [:y:] = Polynomial.monom 1 1 * poly (poly_y_x p) [:y:]"
-    by simp
-  also have "poly a y + poly \<dots> x = poly (poly (pCons a p) [:x:]) y"
-    by (simp add: pCons poly_monom)
-  finally show ?case .
-qed auto
-
-lemma (in idom_hom) map_poly_higher_pderiv [hom_distribs]:
-  "map_poly hom ((pderiv ^^ n) p) = (pderiv ^^ n) (map_poly hom p)"
-  by (induction n) (simp_all add: map_poly_pderiv)
-
-lemma coeff_prod_linear_factors:
-  fixes f :: "'a \<Rightarrow> 'b :: comm_ring_1"
-  assumes [intro]: "finite A"
-  shows "Polynomial.coeff (\<Prod>x\<in>A. [:-f x, 1:] ^ e x) i =
-           (\<Sum>X | X \<in> Pow (SIGMA x:A. {..<e x}) \<and> i = sum e A - card X.
-             (-1) ^ card X * (\<Prod>x\<in>X. f (fst x)))"
-proof -
-  define poly_X where "poly_X = (Polynomial.monom 1 1 :: 'b poly)"
-  have [simp]: "(- 1) ^ n = [:(- 1) ^ n :: 'b:]" for n :: nat
-    by (simp flip: pCons_one)
-  have "(\<Prod>x\<in>A. [:-f x, 1:] ^ e x) = (\<Prod>(x,_)\<in>Sigma A (\<lambda>x. {..<e x}). [:-f x, 1:])"
-    by (subst prod.Sigma [symmetric]) auto
-  also have "\<dots> = (\<Prod>(x,_)\<in>Sigma A (\<lambda>x. {..<e x}). poly_X - [:f x:])"
-    by (intro prod.cong) (auto simp: poly_X_def monom_altdef)
-  also have "\<dots> = (\<Sum>X\<in>Pow (SIGMA x:A. {..<e x}).
-                    Polynomial.smult ((-1) ^ card X * (\<Prod>x\<in>X. f (fst x)))
-                    (poly_X ^ card ((SIGMA x:A. {..<e x}) - X)))"
-    unfolding case_prod_unfold 
-    by (subst prod_diff1) (auto simp: mult_ac simp flip: coeff_lift_hom.hom_prod)
-  also have "\<dots> = (\<Sum>X\<in>Pow (SIGMA x:A. {..<e x}).
-       Polynomial.monom ((- 1) ^ card X * (\<Prod>x\<in>X. f (fst x))) (card ((SIGMA x:A. {..<e x}) - X)))"
-    unfolding poly_X_def monom_power Polynomial.smult_monom by simp
-  also have "Polynomial.coeff \<dots> i = (\<Sum>X\<in>{X\<in>Pow (SIGMA x:A. {..<e x}). i =
-               sum e A - card X}. (- 1) ^ card X * (\<Prod>x\<in>X. f (fst x)))"
-    unfolding Polynomial.coeff_sum
-  proof (intro sum.mono_neutral_cong_right ballI, goal_cases)
-    case (3 X)
-    hence X: "X \<subseteq> (SIGMA x:A. {..<e x})"
-      by auto
-    have card_le: "card X \<le> card (SIGMA x:A. {..<e x})"
-      using X by (intro card_mono) auto
-    have "finite X"
-      by (rule finite_subset[OF X]) auto
-    hence "card ((SIGMA x:A. {..<e x}) - X) = card (SIGMA x:A. {..<e x}) - card X"
-      using 3 by (intro card_Diff_subset) auto
-    also have card_eq: "card (SIGMA x:A. {..<e x}) = sum e A"
-      by (subst card_SigmaI) auto
-    finally show ?case
-      using 3 card_le card_eq by (auto simp: algebra_simps)
-  next
-    case (4 X)
-    hence X: "X \<subseteq> (SIGMA x:A. {..<e x})"
-      by auto
-    have "finite X"
-      by (rule finite_subset[OF X]) auto
-    hence "card ((SIGMA x:A. {..<e x}) - X) = card (SIGMA x:A. {..<e x}) - card X"
-      using 4 by (intro card_Diff_subset) auto
-    also have card_eq: "card (SIGMA x:A. {..<e x}) = sum e A"
-      by (subst card_SigmaI) auto
-    finally show ?case
-      using 4 card_eq by (auto simp: algebra_simps)
-  qed auto
-  finally show ?thesis .
-qed
-
-lemma (in comm_ring_hom) synthetic_div_hom:
-  "synthetic_div (map_poly hom p) (hom x) = map_poly hom (synthetic_div p x)"
-  by (induction p) (auto simp: map_poly_pCons_hom)
-
-lemma synthetic_div_altdef:
-  fixes p :: "'a :: field poly"
-  shows "synthetic_div p c = p div [:-c, 1:]"
-proof -
-  define q where "q = p div [:- c, 1:]"
-  have "Polynomial.degree (p mod [:-c, 1:]) = 0"
-  proof (cases "p mod [:-c, 1:] = 0")
-    case False
-    hence "Polynomial.degree (p mod [:-c, 1:]) < Polynomial.degree [:-c, 1:]"
-      by (intro degree_mod_less') auto
-    thus ?thesis by simp
-  qed auto
-  then obtain d where d: "p mod [:-c, 1:] = [:d:]"
-    by (elim degree_eq_zeroE)
-
-  have p_eq: "p = q * [:-c, 1:] + [:d:]"
-    unfolding q_def d [symmetric] by presburger
-  have [simp]: "poly p c = d"
-    by (simp add: p_eq)
-  have "p + Polynomial.smult c q = pCons (poly p c) q"
-    by (subst p_eq) auto
-  from synthetic_div_unique[OF this] show ?thesis
-    by (auto simp: q_def)
-qed
-
-lemma (in ring_closed) poly_closed [intro]:
-  assumes "\<And>i. poly.coeff p i \<in> A" "x \<in> A"
-  shows   "poly p x \<in> A"
-  unfolding poly_altdef by (intro sum_closed mult_closed power_closed assms)
-
-lemma (in ring_closed) coeff_pCons_closed [intro]:
-  assumes "\<And>i. poly.coeff p i \<in> A" "x \<in> A"
-  shows   "poly.coeff (pCons x p) i \<in> A"
-  unfolding poly_altdef using assms by (auto simp: coeff_pCons split: nat.splits)
-
-lemma (in ring_closed) coeff_poly_mult_closed [intro]:
-  assumes "\<And>i. poly.coeff p i \<in> A" "\<And>i. poly.coeff q i \<in> A"
-  shows   "poly.coeff (p * q) i \<in> A"
-  unfolding coeff_mult using assms by auto
-
-lemma (in ring_closed) coeff_poly_prod_closed [intro]:
-  assumes "\<And>x i. x \<in> X \<Longrightarrow> poly.coeff (f x) i \<in> A"
-  shows   "poly.coeff (prod f X) i \<in> A"
-  using assms by (induction X arbitrary: i rule: infinite_finite_induct) auto
-
-lemma (in ring_closed) coeff_poly_power_closed [intro]:
-  assumes "\<And>i. poly.coeff p i \<in> A"
-  shows   "poly.coeff (p ^ n) i \<in> A"
-  using coeff_poly_prod_closed[of "{..<n}" "\<lambda>_. p" i] assms by simp
-
-lemma (in ring_closed) synthetic_div_closed:
-  assumes "\<And>i. poly.coeff p i \<in> A" "x \<in> A"
-  shows   "poly.coeff (synthetic_div p x) i \<in> A"
-proof -
-  from assms(1) have "\<forall>i. poly.coeff p i \<in> A"
-    by blast
-  from this and assms(2) show ?thesis
-    by (induction p arbitrary: i) (auto simp: coeff_pCons split: nat.splits)
-qed
-
-lemma pcompose_monom: "pcompose (Polynomial.monom c n) p = Polynomial.smult c (p ^ n)"
-  by (simp add: monom_altdef pcompose_hom.hom_power pcompose_smult)
-
-lemma poly_roots_uminus [simp]: "poly_roots (-p) = poly_roots p"
-  using poly_roots_smult[of "-1" p] by (simp del: poly_roots_smult)
-
-lemma poly_roots_normalize [simp]:
-  fixes p :: "'a :: {normalization_semidom, idom_divide} poly"
-  shows "poly_roots (normalize p) = poly_roots p"
-proof (cases "p = 0")
-  case [simp]: False
-  have "poly_roots p = poly_roots (unit_factor p * normalize p)"
-    by simp
-  also have "\<dots> = poly_roots (normalize p)"
-    unfolding unit_factor_poly_def by simp
-  finally show ?thesis ..
-qed auto
-
-
-lemma poly_roots_of_int_normalize [simp]:
-  "poly_roots (of_int_poly (normalize p) :: 'a :: {idom, ring_char_0} poly) =
-   poly_roots (of_int_poly p)"
-proof (cases "p = 0")
-  case [simp]: False
-  have "poly_roots (of_int_poly p :: 'a poly) = poly_roots (of_int_poly (unit_factor p * normalize p))"
-    by simp
-  also have "\<dots> = poly_roots (Polynomial.smult (of_int (sgn (Polynomial.lead_coeff p)))
-                    (of_int_poly (normalize p)))"
-    by (simp add: unit_factor_poly_def of_int_hom.map_poly_hom_smult)
-  also have "\<dots> = poly_roots (Ring_Hom_Poly.of_int_poly (normalize p) :: 'a poly)"
-    by (intro poly_roots_smult) (auto simp: sgn_if)
-  finally show ?thesis ..
-qed auto
-
-lemma poly_roots_power [simp]: "poly_roots (p ^ n) = repeat_mset n (poly_roots p)"
-proof (cases "p = 0")
-  case True
-  thus ?thesis by (cases n) auto
-next
-  case False
-  thus ?thesis by (induction n) (auto simp: poly_roots_mult)
-qed
-
-lemma poly_roots_conv_sum_prime_factors:
-  "poly_roots q = (\<Sum>p\<in>#prime_factorization q. poly_roots p)"
-proof (cases "q = 0")
-  case [simp]: False
-
-  have "(\<Sum>p\<in>#prime_factorization q. poly_roots p) =
-        poly_roots (prod_mset (prime_factorization q))"
-    by (rule poly_roots_prod_mset [symmetric]) auto
-  also have "\<dots> = poly_roots (normalize (prod_mset (prime_factorization q)))"
-    by simp
-  also have "normalize (prod_mset (prime_factorization q)) = normalize q"
-    by (rule prod_mset_prime_factorization_weak) auto
-  also have "poly_roots \<dots> = poly_roots q"
-    by simp
-  finally show ?thesis ..
-qed auto
-
-lemma poly_roots_of_int_conv_sum_prime_factors:
-  "poly_roots (of_int_poly q :: 'a :: {idom, ring_char_0} poly) =
-   (\<Sum>p\<in>#prime_factorization q. poly_roots (of_int_poly p))"
-proof (cases "q = 0")
-  case [simp]: False
-
-  have "(\<Sum>p\<in>#prime_factorization q. poly_roots (of_int_poly p :: 'a poly)) =
-        poly_roots (\<Prod>p\<in>#prime_factorization q. of_int_poly p)"
-    by (subst poly_roots_prod_mset) (auto simp: multiset.map_comp o_def)
-  also have "(\<Prod>p\<in>#prime_factorization q. of_int_poly p :: 'a poly) =
-               of_int_poly (prod_mset (prime_factorization q))"
-    by simp
-  also have "poly_roots \<dots> = poly_roots (of_int_poly (normalize (prod_mset (prime_factorization q))))"
-    by (rule poly_roots_of_int_normalize [symmetric])
-  also have "normalize (prod_mset (prime_factorization q)) = normalize q"
-    by (rule prod_mset_prime_factorization_weak) auto
-  also have "poly_roots (of_int_poly \<dots> :: 'a poly) = poly_roots (of_int_poly q)"
-    by simp
-  finally show ?thesis ..
-qed auto
-
-lemma dvd_imp_poly_roots_subset:
-  assumes "q \<noteq> 0" "p dvd q"
-  shows   "poly_roots p \<subseteq># poly_roots q"
-proof -
-  from assms have "p \<noteq> 0"
-    by auto
-  thus ?thesis
-    using assms by (intro mset_subset_eqI) (auto intro: dvd_imp_order_le)
-qed
-
-lemma abs_prod_mset: "\<bar>prod_mset (A :: 'a :: idom_abs_sgn multiset)\<bar> = prod_mset (image_mset abs A)"
-  by (induction A) (auto simp: abs_mult)
-
-lemma content_1_imp_nonconstant_prime_factors:
-  assumes "content (p :: int poly) = 1" and "q \<in> prime_factors p"
-  shows   "Polynomial.degree q > 0"
-proof -
-  let ?d = "Polynomial.degree :: int poly \<Rightarrow> nat"
-  let ?lc = "Polynomial.lead_coeff :: int poly \<Rightarrow> int"
-  define P where "P = prime_factorization p"
-  define P1 where "P1 = filter_mset (\<lambda>p. ?d p = 0) P"
-  define P2 where "P2 = filter_mset (\<lambda>p. ?d p > 0) P"
-  have [simp]: "p \<noteq> 0"
-    using assms by auto
-  have "1 = content (normalize p)"
-    using assms by simp
-  also have "normalize p = prod_mset P"
-    unfolding P_def by (rule prod_mset_prime_factorization [symmetric]) auto
-  also have "P = filter_mset (\<lambda>p. ?d p = 0) P + filter_mset (\<lambda>p. ?d p > 0) P"
-    by (induction P) auto
-  also have "prod_mset \<dots> = prod_mset P1 * prod_mset P2"
-    unfolding P1_def P2_def by (subst prod_mset.union) auto
-  also have "content \<dots> = content (prod_mset P1) * content (prod_mset P2)"
-    unfolding content_mult ..
-  also have "image_mset id P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
-    by (intro image_mset_cong) (auto simp: P1_def elim!: degree_eq_zeroE)
-  hence "P1 = image_mset (\<lambda>q. [:?lc q:]) P1"
-    by simp
-  also have "content (prod_mset \<dots>) = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
-    by (simp add: content_prod_mset multiset.map_comp o_def abs_prod_mset)
-  finally have "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> * content (prod_mset P2) = 1" ..
-  hence "\<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar> dvd 1"
-    unfolding dvd_def by metis
-
-  have "set_mset P1 = {}"
-  proof (rule ccontr)
-    assume "set_mset P1 \<noteq> {}"
-    then obtain q where q: "q \<in># P1"
-      by blast
-    have "\<bar>?lc q\<bar> dvd (\<Prod>q\<in>#P1. \<bar>?lc q\<bar>)"
-      by (rule dvd_prod_mset) (use q in auto)
-    also have "\<dots> = \<bar>(\<Prod>q\<in>#P1. ?lc q)\<bar>"
-      by (simp add: abs_prod_mset multiset.map_comp o_def)
-    also have "\<dots> dvd 1"
-      by fact
-    finally have "is_unit (?lc q)"
-      by simp
-    hence "is_unit q"
-      using q unfolding P1_def by (auto elim!: degree_eq_zeroE)
-    moreover have "prime q"
-      using q unfolding P1_def P_def by auto
-    ultimately show False by auto
-  qed
-  with assms show ?thesis
-    by (auto simp: P1_def P_def)
-qed
-
-
-subsection \<open>Auxiliary facts about multivariate polynomials\<close>
-
-lemma Var_altdef: "Var i = monom (Poly_Mapping.single i 1) 1"
-  by transfer' (simp add: Var\<^sub>0_def)
-
-lemma Const_0 [simp]: "Const 0 = 0"
-  by transfer (auto simp: Const\<^sub>0_def)
-
-lemma Const_1 [simp]: "Const 1 = 1"
-  by transfer (auto simp: Const\<^sub>0_def)
-
-lemma Const_conv_monom: "Const c = monom 0 c"
-  by transfer' (auto simp: Const\<^sub>0_def)
-
-lemma smult_conv_mult_Const: "smult c p = Const c * p"
-  by (simp add: smult_conv_mult Const_conv_monom)
-
-lemma mpoly_map_vars_Var [simp]: "bij f \<Longrightarrow> mpoly_map_vars f (Var i) = Var (f i)"
-  unfolding Var_altdef
-  by (subst mpoly_map_vars_monom) (auto simp: permutep_single bij_imp_bij_inv inv_inv_eq)
-
-lemma symmetric_mpoly_symmetric_prod':
-  assumes "\<And>\<pi>. \<pi> permutes A \<Longrightarrow> g \<pi> permutes X"
-  assumes "\<And>x \<pi>. x \<in> X \<Longrightarrow> \<pi> permutes A \<Longrightarrow> mpoly_map_vars \<pi> (f x) = f (g \<pi> x)"
-  shows "symmetric_mpoly A (\<Prod>x\<in>X. f x)"
-  unfolding symmetric_mpoly_def
-proof safe
-  fix \<pi> assume \<pi>: "\<pi> permutes A"
-  have "mpoly_map_vars \<pi> (prod f X) = (\<Prod>x\<in>X. mpoly_map_vars \<pi> (f x))"
-    by simp
-  also have "\<dots> = (\<Prod>x\<in>X. f (g \<pi> x))"
-    by (intro prod.cong assms \<pi> refl)
-  also have "\<dots> = (\<Prod>x\<in>g \<pi>`X. f x)"
-    using assms(1)[OF \<pi>] by (subst prod.reindex) (auto simp: permutes_inj_on)
-  also have "g \<pi> ` X = X"
-    using assms(1)[OF \<pi>] by (simp add: permutes_image)
-  finally show "mpoly_map_vars \<pi> (prod f X) = prod f X" .
-qed
-
-
-
-subsection \<open>Converting a univariate polynomial into a multivariate one\<close>
-
-lift_definition mpoly_of_poly_aux :: "nat \<Rightarrow> 'a :: zero poly \<Rightarrow> (nat \<Rightarrow>\<^sub>0 nat) \<Rightarrow>\<^sub>0 'a" is
-  "\<lambda>i c m. if Poly_Mapping.keys m \<subseteq> {i} then c (Poly_Mapping.lookup m i) else 0"
-proof goal_cases
-  case (1 i c)
-  hence fin: "finite {n. c n \<noteq> 0}"
-    by (metis eventually_cofinite)
-  show "finite {x. (if keys x \<subseteq> {i} then c (lookup x i) else 0) \<noteq> 0}"
-  proof (rule finite_subset)
-    show "finite (Poly_Mapping.single i ` {n. c n \<noteq> 0})"
-      by (intro finite_imageI fin)
-  next
-    show "{x. (if keys x \<subseteq> {i} then c (lookup x i) else 0) \<noteq> 0} \<subseteq>
-            Poly_Mapping.single i ` {n. c n \<noteq> 0}"
-    proof (safe, split if_splits)
-      fix x :: "(nat \<Rightarrow>\<^sub>0 nat)"
-      assume x: "keys x \<subseteq> {i}" "c (lookup x i) \<noteq> 0"
-      hence "x = Poly_Mapping.single i (lookup x i)"
-        by (metis Diff_eq_empty_iff keys_empty_iff lookup_single_eq
-                  remove_key_keys remove_key_single remove_key_sum)
-      thus "x \<in> Poly_Mapping.single i ` {n. c n \<noteq> 0}"
-        using x by blast
-    qed auto
-  qed
-qed
-
-lift_definition mpoly_of_poly :: "nat \<Rightarrow> 'a :: zero poly \<Rightarrow> 'a mpoly" is
-  "mpoly_of_poly_aux" .
-
-lemma mpoly_of_poly_0 [simp]: "mpoly_of_poly i 0 = 0"
-  by (transfer', transfer) auto
-
-lemma coeff_mpoly_of_poly1 [simp]:
-  "coeff (mpoly_of_poly i p) (Poly_Mapping.single i n) = poly.coeff p n"
-  by (transfer', transfer') auto
-
-lemma coeff_mpoly_of_poly2 [simp]:
-  assumes "\<not>keys x \<subseteq> {i}"
-  shows "coeff (mpoly_of_poly i p) x = 0"
-  using assms by (transfer', transfer') auto
-
-lemma coeff_mpoly_of_poly:
-  "coeff (mpoly_of_poly i p) m =
-     (poly.coeff p (Poly_Mapping.lookup m i) when keys m \<subseteq> {i})"
-  by (transfer', transfer') auto
-
-lemma poly_mapping_single_eq_0_iff [simp]: "Poly_Mapping.single i n = 0 \<longleftrightarrow> n = 0"
-  by (metis lookup_single_eq single_zero)
-
-lemma mpoly_of_poly_pCons [simp]:
-  fixes p :: "'a :: semiring_1 poly"
-  shows "mpoly_of_poly i (pCons c p) = Const c + Var i * mpoly_of_poly i p"
-proof (rule mpoly_eqI)
-  fix mon :: "nat \<Rightarrow>\<^sub>0 nat"
-  define moni :: "nat \<Rightarrow>\<^sub>0 nat" where "moni = Poly_Mapping.single i 1"
-  have "coeff (Var i * mpoly_of_poly i p) mon =
-          (\<Sum>l. (1 when l = moni) * (\<Sum>q. coeff (mpoly_of_poly i p) q when mon = moni + q))"
-    unfolding coeff_mpoly_times prod_fun_def coeff_Var moni_def
-    by (rule Sum_any.cong) (auto simp: when_def)
-  also have "\<dots> = (\<Sum>a. coeff (mpoly_of_poly i p) a when mon = moni + a)"
-    by (subst Sum_any_left_distrib [symmetric]) simp_all
-  finally have eq: "coeff (Var i * mpoly_of_poly i p) mon = \<dots>" .
-
-  show "coeff (mpoly_of_poly i (pCons c p)) mon = coeff (Const c + Var i * mpoly_of_poly i p) mon"
-  proof (cases "keys mon \<subseteq> {i}")
-    case False
-    hence [simp]: "mon \<noteq> 0"
-      by auto
-    obtain j where j: "j \<in> keys mon" "j \<noteq> i"
-      using False by auto
-    have "coeff (mpoly_of_poly i p) mon' = 0" if mon_eq: "mon = moni + mon'" for mon'
-    proof -
-      have "Poly_Mapping.lookup mon j \<noteq> 0"
-        using j by (meson lookup_eq_zero_in_keys_contradict)
-      also have "Poly_Mapping.lookup mon j = Poly_Mapping.lookup mon' j"
-        unfolding mon_eq moni_def using j by (simp add: lookup_add lookup_single)
-      finally have "j \<in> keys mon'"
-        by (meson lookup_not_eq_zero_eq_in_keys)
-      with j have "\<not>keys mon' \<subseteq> {i}"
-        by blast
-      thus ?thesis by simp
-    qed
-    hence "coeff (Var i * mpoly_of_poly i p) mon = 0"
-      unfolding eq by (intro Sum_any_zeroI) (auto simp: when_def)
-    thus ?thesis using False
-      by (simp add: mpoly_coeff_Const)
-  next
-    case True
-    define n where "n = Poly_Mapping.lookup mon i"
-    have mon_eq: "mon = Poly_Mapping.single i n"
-      using True unfolding n_def
-      by (metis Diff_eq_empty_iff add_cancel_right_left keys_empty_iff remove_key_keys remove_key_sum)
-    have eq': "mon = moni + mon' \<longleftrightarrow> n > 0 \<and> mon' = Poly_Mapping.single i (n - 1)" for mon'
-    proof safe
-      assume eq: "mon = moni + mon'"
-      thus "n > 0" "mon' = Poly_Mapping.single i (n - 1)"
-        unfolding moni_def mon_eq using gr0I by (force simp: single_diff)+
-    next
-      assume "n > 0" "mon' = Poly_Mapping.single i (n - 1)"
-      thus "mon = moni + Poly_Mapping.single i (n - 1)"
-        unfolding mon_eq moni_def by (subst single_add [symmetric]) auto
-    qed
-    have "coeff (Var i * mpoly_of_poly i p) mon = (poly.coeff p (n - 1) when (n > 0))"
-      unfolding eq eq' by (auto simp: when_def)
-    thus ?thesis
-      by (auto simp: mon_eq when_def mpoly_coeff_Const coeff_pCons split: nat.splits)
-  qed
-qed
-
-lemma mpoly_of_poly_1 [simp]: "mpoly_of_poly i 1 = 1"
-  unfolding one_pCons mpoly_of_poly_pCons mpoly_of_poly_0 by simp
-
-lemma mpoly_of_poly_uminus [simp]: "mpoly_of_poly i (-p) = -mpoly_of_poly i p"
-  by (rule mpoly_eqI) (auto simp: coeff_mpoly_of_poly when_def)
-
-lemma mpoly_of_poly_add [simp]: "mpoly_of_poly i (p + q) = mpoly_of_poly i p + mpoly_of_poly i q"
-  by (rule mpoly_eqI) (auto simp: coeff_mpoly_of_poly when_def)
-
-lemma mpoly_of_poly_diff [simp]: "mpoly_of_poly i (p - q) = mpoly_of_poly i p - mpoly_of_poly i q"
-  by (rule mpoly_eqI) (auto simp: coeff_mpoly_of_poly when_def)
-
-lemma mpoly_of_poly_smult [simp]:
-  "mpoly_of_poly i (Polynomial.smult c p) = smult c (mpoly_of_poly i p)"
-  by (rule mpoly_eqI) (auto simp: coeff_mpoly_of_poly when_def)
-
-lemma mpoly_of_poly_mult [simp]:
-  fixes p q :: "'a :: comm_semiring_1 poly"
-  shows "mpoly_of_poly i (p * q) = mpoly_of_poly i p * mpoly_of_poly i q"
-  by (induction p) (auto simp: algebra_simps smult_conv_mult_Const)
-
-lemma insertion_mpoly_of_poly [simp]: "insertion f (mpoly_of_poly i p) = poly p (f i)"
-  by (induction p) (auto simp: insertion_add insertion_mult)
-
-lemma mapping_of_mpoly_of_poly [simp]: "mapping_of (mpoly_of_poly i p) = mpoly_of_poly_aux i p"
-  by transfer' simp
-
-lemma vars_mpoly_of_poly: "vars (mpoly_of_poly i p) \<subseteq> {i}"
-proof -
-  have "x = i" if "xa \<in> keys (mpoly_of_poly_aux i p)" "x \<in> keys xa" for x xa
-    using that
-    by (meson in_mono lookup_eq_zero_in_keys_contradict mpoly_of_poly_aux.rep_eq singletonD)
-  thus ?thesis
-    by (auto simp: vars_def)
-qed
-
-lemma mpoly_map_vars_mpoly_of_poly [simp]:
-  assumes "bij f"
-  shows   "mpoly_map_vars f (mpoly_of_poly i p) = mpoly_of_poly (f i) p"
-proof (rule mpoly_eqI, goal_cases)
-  case (1 mon)
-  have "f -` keys mon \<subseteq> {i} \<longleftrightarrow> keys mon \<subseteq> {f i}"
-    using assms by (simp add: vimage_subset_eq)
-  thus ?case using assms
-    by (simp add: coeff_mpoly_map_vars coeff_mpoly_of_poly lookup_permutep keys_permutep when_def)
-qed
-
-
-subsection \<open>Miscellaneous facts\<close>
-
-lemma bij_betw_permutes_compose_left:
-  assumes "\<pi> permutes A"
-  shows   "bij_betw (\<lambda>\<sigma>. \<pi> \<circ> \<sigma>) {\<sigma>. \<sigma> permutes A} {\<sigma>. \<sigma> permutes A}"
-proof (rule bij_betwI)
-  show "(\<circ>) \<pi> \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
-    by (auto intro: permutes_compose assms)
-  show "(\<circ>) (inv_into UNIV \<pi>) \<in> {\<sigma>. \<sigma> permutes A} \<rightarrow> {\<sigma>. \<sigma> permutes A}"
-    by (auto intro: permutes_compose assms permutes_inv)
-qed (use permutes_inverses[OF assms] in auto)
-
-lemma finite_multisets_of_size:
-  assumes "finite A"
-  shows   "finite {X. set_mset X \<subseteq> A \<and> size X = n}"
-proof (rule finite_subset)
-  show "{X. set_mset X \<subseteq> A \<and> size X = n} \<subseteq> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
-  proof
-    fix X assume X: "X \<in> {X. set_mset X \<subseteq> A \<and> size X = n}"
-    obtain xs where [simp]: "X = mset xs"
-      by (metis ex_mset)
-    thus "X \<in> mset ` {xs. set xs \<subseteq> A \<and> length xs = n}"
-      using X by auto
-  qed
-next
-  show "finite (mset ` {xs. set xs \<subseteq> A \<and> length xs = n})"
-    by (intro finite_imageI finite_lists_length_eq assms)
-qed
-
-lemma sum_mset_image_mset_sum_mset_image_mset:
-   "sum_mset (image_mset g (sum_mset (image_mset f A))) =
-    sum_mset (image_mset (\<lambda>x. sum_mset (image_mset g (f x))) A)"
-  by (induction A) auto
-
-lemma sum_mset_image_mset_singleton: "sum_mset (image_mset (\<lambda>x. {#f x#}) A) = image_mset f A"
-  by (induction A) auto
-
-lemma sum_mset_conv_sum:
-  "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
-proof (induction A rule: full_multiset_induct)
-  case (less A)
-  show ?case
-  proof (cases "A = {#}")
-    case False
-    then obtain x where x: "x \<in># A"
-      by auto
-    define n where "n = count A x"
-    define A' where "A' = filter_mset (\<lambda>y. y \<noteq> x) A"
-    have A_eq: "A = replicate_mset n x + A'"
-      by (intro multiset_eqI) (auto simp: A'_def n_def)
-    have [simp]: "x \<notin># A'" "count A' x = 0"
-      by (auto simp: A'_def)
-    have "n \<noteq> 0"
-      using x by (auto simp: n_def)
-    
-    have "sum_mset (image_mset f A) = of_nat n * f x + sum_mset (image_mset f A')"
-      by (simp add: A_eq)
-    also have "A' \<subset># A"
-      unfolding A'_def using x by (simp add: filter_mset_eq_conv subset_mset_def)
-    with less.IH have "sum_mset (image_mset f A') = (\<Sum>x\<in>set_mset A'. of_nat (count A' x) * f x)"
-      by simp
-    also have "\<dots> = (\<Sum>x\<in>set_mset A'. of_nat (count A x) * f x)"
-      by (intro sum.cong) (auto simp: A_eq)
-    also have "of_nat n * f x + \<dots> = (\<Sum>x\<in>insert x (set_mset A'). of_nat (count A x) * f x)"
-      by (subst sum.insert) (auto simp: A_eq)
-    also from \<open>n \<noteq> 0\<close> have "insert x (set_mset A') = set_mset A"
-      by (auto simp: A_eq)
-    finally show ?thesis .
-  qed auto
-qed
-
-lemma sum_mset_conv_Sum_any:
-  "sum_mset (image_mset f A) = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
-proof -
-  have "sum_mset (image_mset f A) = (\<Sum>x\<in>set_mset A. of_nat (count A x) * f x)"
-    by (rule sum_mset_conv_sum)
-  also have "\<dots> = Sum_any (\<lambda>x. of_nat (count A x) * f x)"
-  proof (rule Sum_any.expand_superset [symmetric])
-    show "{x. of_nat (count A x) * f x \<noteq> 0} \<subseteq> set_mset A"
-    proof
-      fix x assume "x \<in> {x. of_nat (count A x) * f x \<noteq> 0}"
-      hence "count A x \<noteq> 0"
-        by (intro notI) auto
-      thus "x \<in># A"
-        by auto
-    qed
-  qed auto
-  finally show ?thesis .
-qed
-
-lemma Sum_any_sum_swap:
-  assumes "finite A" "\<And>y. finite {x. f x y \<noteq> 0}"
-  shows   "Sum_any (\<lambda>x. sum (f x) A) = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
-proof -
-  have "Sum_any (\<lambda>x. sum (f x) A) = Sum_any (\<lambda>x. Sum_any (\<lambda>y. f x y when y \<in> A))"
-    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
-  also have "\<dots> = Sum_any (\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A))"
-    by (intro Sum_any.swap[of "(\<Union>y\<in>A. {x. f x y \<noteq> 0}) \<times> A"] finite_SigmaI finite_UN_I assms) auto
-  also have "(\<lambda>y. Sum_any (\<lambda>x. f x y when y \<in> A)) = (\<lambda>y. Sum_any (\<lambda>x. f x y) when y \<in> A)"
-    by (auto simp: when_def)
-  also have "Sum_any \<dots> = (\<Sum>y\<in>A. Sum_any (\<lambda>x. f x y))"
-    unfolding when_def by (subst Sum_any.conditionalize) (use assms in simp_all)
-  finally show ?thesis .
-qed
-
-lemma in_Ints_imp_algebraic [simp, intro]: "x \<in> \<int> \<Longrightarrow> algebraic x"
-  by (intro algebraic_int_imp_algebraic int_imp_algebraic_int)
-
-lemma in_Rats_imp_algebraic [simp, intro]: "x \<in> \<rat> \<Longrightarrow> algebraic x"
-  by (auto elim!: Rats_cases' intro: algebraic_div)
-
-lemma algebraic_uminus_iff [simp]: "algebraic (-x) \<longleftrightarrow> algebraic x"
-  using algebraic_uminus[of x] algebraic_uminus[of "-x"] by auto
-
-lemma algebraic_0 [simp]: "algebraic (0 :: 'a :: field_char_0)"
-  and algebraic_1 [simp]: "algebraic (1 :: 'a :: field_char_0)"
-  by auto  
-
-lemma algebraic_ii [simp]: "algebraic \<i>"
-  by (intro algebraic_int_imp_algebraic) auto
-
-lemma algebraic_int_fact [simp, intro]: "algebraic_int (fact n)"
-  by (intro int_imp_algebraic_int fact_in_Ints)
-
-lemma exponential_smallo_fact: "(\<lambda>n. c ^ n :: real) \<in> o(\<lambda>n. fact n)"
-  by (rule smalloI_tendsto[OF power_over_fact_tendsto_0]) auto
-
-lemma (in landau_pair) big_power:
-  assumes "f \<in> L F g"
-  shows   "(\<lambda>x. f x ^ n) \<in> L F (\<lambda>x. g x ^ n)"
-  using big_prod[of "{..<n}" "\<lambda>_. f" F "\<lambda>_. g"] assms by simp
-
-lemma (in landau_pair) small_power:
-  assumes "f \<in> l F g" "n > 0"
-  shows   "(\<lambda>x. f x ^ n) \<in> l F (\<lambda>x. g x ^ n)"
-  using assms(2,1)
-  by (induction rule: nat_induct_non_zero) (auto intro!: small.mult)
-
-lemma pairwise_imp_disjoint_family_on:
-  assumes "pairwise R A"
-  assumes "\<And>m n. m \<in> A \<Longrightarrow> n \<in> A \<Longrightarrow> R m n \<Longrightarrow> f m \<inter> f n = {}"
-  shows   "disjoint_family_on f A"
-  using assms
-  unfolding disjoint_family_on_def pairwise_def by blast
-
-lemma (in comm_monoid_set) If_eq:
-  assumes "y \<in> A" "finite A"
-  shows   "F (\<lambda>x. g x (if x = y then h1 x else h2 x)) A = f (g y (h1 y)) (F (\<lambda>x. g x (h2 x)) (A-{y}))"
-proof -
-  have "F (\<lambda>x. g x (if x = y then h1 x else h2 x)) A =
-          f (g y (h1 y)) (F (\<lambda>x. g x (if x = y then h1 x else h2 x)) (A-{y}))"
-    using assms by (subst remove[of _ y]) auto
-  also have "F (\<lambda>x. g x (if x = y then h1 x else h2 x)) (A-{y}) = F (\<lambda>x. g x (h2 x)) (A-{y})"
-    by (intro cong) auto
-  finally show ?thesis by simp
-qed
-
-lemma prod_nonzeroI:
-  fixes f :: "'a \<Rightarrow> 'b :: {semiring_no_zero_divisors, comm_semiring_1}"
-  assumes "\<And>x. x \<in> A \<Longrightarrow> f x \<noteq> 0"
-  shows "prod f A \<noteq> 0"
-  using assms by (induction rule: infinite_finite_induct) auto
-
-lemma frequently_prime_cofinite: "frequently (prime :: nat \<Rightarrow> bool) cofinite"
-  using INFM_nat_le by blast
-
-lemma frequently_eventually_mono:
-  assumes "frequently Q F" "eventually P F" "\<And>x. P x \<Longrightarrow> Q x \<Longrightarrow> R x"
-  shows   "frequently R F"
-proof (rule frequently_mp[OF _ assms(1)])
-  show "eventually (\<lambda>x. Q x \<longrightarrow> R x) F"
-    using assms(2) by eventually_elim (use assms(3) in blast)
-qed
-
-lemma bij_betw_Diff:
-  assumes "bij_betw f A B" "bij_betw f A' B'" "A' \<subseteq> A" "B' \<subseteq> B"
-  shows   "bij_betw f (A - A') (B - B')"
-  unfolding bij_betw_def
-proof
-  have "inj_on f A"
-    using assms(1) by (auto simp: bij_betw_def)
-  thus "inj_on f (A - A')"
-    by (rule inj_on_subset) auto
-  have "f ` (A - A') = f ` A - f ` A'"
-    by (intro inj_on_image_set_diff[OF \<open>inj_on f A\<close>]) (use \<open>A' \<subseteq> A\<close> in auto)
-  also have "\<dots> = B - B'"
-    using assms(1,2) by (auto simp: bij_betw_def)
-  finally show "f` (A - A') = B - B'" .
-qed
-    
-lemma bij_betw_singleton: "bij_betw f {x} {y} \<longleftrightarrow> f x = y"
-  by (auto simp: bij_betw_def)
-
-
-subsection \<open>Turning an algebraic number into an algebraic integer\<close>
-
-lemma algebraic_imp_algebraic_int:
-  fixes x :: "'a :: field_char_0"
-  assumes "ipoly p x = 0" "p \<noteq> 0"
-  defines "c \<equiv> Polynomial.lead_coeff p"
-  shows   "algebraic_int (of_int c * x)"
-proof -
-  define n where "n = Polynomial.degree p"
-  define p' where "p' = Abs_poly (\<lambda>i. if i = n then 1 else c ^ (n - i - 1) * poly.coeff p i)"
-  have "n > 0"
-    using assms unfolding n_def by (intro Nat.gr0I) (auto elim!: degree_eq_zeroE)
-
-  have coeff_p': "poly.coeff p' i =
-                    (if i = n then 1 else c ^ (n - i - 1) * poly.coeff p i)"
-    (is "_ = ?f i") for i unfolding p'_def
-  proof (subst poly.Abs_poly_inverse)
-    have "eventually (\<lambda>i. poly.coeff p i = 0) cofinite"
-      using MOST_coeff_eq_0 by blast
-    hence "eventually (\<lambda>i. ?f i = 0) cofinite"
-      by eventually_elim (use assms in \<open>auto simp: deg_def n_def\<close>)
-    thus "?f \<in> {f. eventually (\<lambda>i. f i = 0) cofinite}" by simp
-  qed auto
-
-  have deg_p': "Polynomial.degree p' = n"
-  proof -
-    from assms have "(\<lambda>n. \<forall>i>n. poly.coeff p' i = 0) = (\<lambda>n. \<forall>i>n. poly.coeff p i = 0)"
-      by (auto simp: coeff_p' fun_eq_iff n_def)
-    thus ?thesis
-      by (simp add: Polynomial.degree_def n_def)
-  qed
-
-  have lead_coeff_p': "Polynomial.lead_coeff p' = 1"
-    by (simp add: coeff_p' deg_p')
-
-  have "0 = of_int (c ^ (n - 1)) * (\<Sum>i\<le>n. of_int (poly.coeff p i) * x ^ i)"
-    using assms unfolding n_def poly_altdef by simp
-  also have "\<dots> = (\<Sum>i\<le>n. of_int (c ^ (n - 1) * poly.coeff p i) * x ^ i)"
-    by (simp add: sum_distrib_left sum_distrib_right mult_ac)
-  also have "\<dots> = (\<Sum>i\<le>n. of_int (poly.coeff p' i) * (of_int c * x) ^ i)"
-  proof (intro sum.cong, goal_cases)
-    case (2 i)
-    have "of_int (poly.coeff p' i) * (of_int c * x) ^ i =
-          of_int (c ^ i * poly.coeff p' i) * x ^ i"
-      by (simp add: algebra_simps)
-    also have "c ^ i * poly.coeff p' i = c ^ (n - 1) * poly.coeff p i"
-    proof (cases "i = n")
-      case True
-      hence "c ^ i * poly.coeff p' i = c ^ n"
-        by (auto simp: coeff_p' simp flip: power_Suc)
-      also have "n = Suc (n - 1)"
-        using \<open>n > 0\<close> by simp
-      also have "c ^ \<dots> = c * c ^ (n - 1)"
-        by simp
-      finally show ?thesis
-        using True by (simp add: c_def n_def)
-    next
-      case False
-      thus ?thesis using 2
-        by (auto simp: coeff_p' simp flip: power_add)
-    qed
-    finally show ?case ..
-  qed auto
-  also have "\<dots> = ipoly p' (of_int c * x)"
-    by (simp add: poly_altdef n_def deg_p')
-  finally have "ipoly p' (of_int c * x) = 0" ..
-
-  with lead_coeff_p' show ?thesis
-    unfolding algebraic_int_altdef_ipoly by blast
-qed
-
-lemma algebraic_imp_algebraic_int':
-  fixes x :: "'a :: field_char_0"
-  assumes "ipoly p x = 0" "p \<noteq> 0" "Polynomial.lead_coeff p dvd c"
-  shows   "algebraic_int (of_int c * x)"
-proof -
-  from assms(3) obtain c' where c_eq: "c = Polynomial.lead_coeff p * c'"
-    by auto
-  have "algebraic_int (of_int c' * (of_int (Polynomial.lead_coeff p) * x))"
-    by (rule algebraic_int_times[OF _ algebraic_imp_algebraic_int]) (use assms in auto)
-  also have "of_int c' * (of_int (Polynomial.lead_coeff p) * x) = of_int c * x"
-    by (simp add: c_eq mult_ac)
-  finally show ?thesis .
-qed
-
-
-subsection \<open>The minimal polynomial of an algebraic number\<close>
-
-definition min_int_poly :: "'a :: field_char_0 \<Rightarrow> int poly" where
-  "min_int_poly x =
-     (if algebraic x then THE p. p represents x \<and> irreducible p \<and> Polynomial.lead_coeff p > 0
-      else [:0, 1:])"
-
-lemma
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows min_int_poly_represents [intro]: "algebraic x \<Longrightarrow> min_int_poly x represents x"
-  and   min_int_poly_irreducible [intro]: "irreducible (min_int_poly x)"
-  and   lead_coeff_min_int_poly_pos: "Polynomial.lead_coeff (min_int_poly x) > 0"
-proof -
-  note * = theI'[OF algebraic_imp_represents_unique, of x]
-  show "min_int_poly x represents x" if "algebraic x"
-    using *[OF that] by (simp add: that min_int_poly_def)
-  have "irreducible [:0, 1::int:]"
-    by (rule irreducible_linear_poly) auto
-  thus "irreducible (min_int_poly x)"
-    using * by (auto simp: min_int_poly_def)
-  show "Polynomial.lead_coeff (min_int_poly x) > 0"
-    using * by (auto simp: min_int_poly_def)
-qed
-
-lemma 
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows degree_min_int_poly_pos [intro]: "Polynomial.degree (min_int_poly x) > 0"
-    and degree_min_int_poly_nonzero [simp]: "Polynomial.degree (min_int_poly x) \<noteq> 0"
-proof -
-  show "Polynomial.degree (min_int_poly x) > 0"
-  proof (cases "algebraic x")
-    case True
-    hence "min_int_poly x represents x"
-      by auto
-    thus ?thesis by blast
-  qed (auto simp: min_int_poly_def)
-  thus "Polynomial.degree (min_int_poly x) \<noteq> 0"
-    by blast
-qed
-
-lemma min_int_poly_squarefree [intro]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "squarefree (min_int_poly x)"
-  by (rule irreducible_imp_squarefree) auto
-
-lemma min_int_poly_primitive [intro]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "primitive (min_int_poly x)"
-  by (rule irreducible_imp_primitive) auto
-
-lemma min_int_poly_content [simp]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "content (min_int_poly x) = 1"
-  using min_int_poly_primitive[of x] by (simp add: primitive_def)
-
-lemma ipoly_min_int_poly [simp]: 
-  "algebraic x \<Longrightarrow> ipoly (min_int_poly x) (x :: 'a :: {field_gcd, field_char_0}) = 0"
-  using min_int_poly_represents[of x] by (auto simp: represents_def)
-
-lemma min_int_poly_nonzero [simp]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "min_int_poly x \<noteq> 0"
-  using lead_coeff_min_int_poly_pos[of x] by auto
-
-lemma min_int_poly_normalize [simp]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "normalize (min_int_poly x) = min_int_poly x"
-  unfolding normalize_poly_def using lead_coeff_min_int_poly_pos[of x] by simp
-
-lemma min_int_poly_prime_elem [intro]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "prime_elem (min_int_poly x)"
-  using min_int_poly_irreducible[of x] by blast
-
-lemma min_int_poly_prime [intro]:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  shows "prime (min_int_poly x)"
-  using min_int_poly_prime_elem[of x]
-  by (simp only: prime_normalize_iff [symmetric] min_int_poly_normalize)
-
-lemma min_int_poly_conv_Gcd:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  assumes "algebraic x"
-  shows "min_int_poly x = Gcd {p. p \<noteq> 0 \<and> p represents x}"
-proof (rule sym, rule Gcd_eqI, (safe)?)
-  fix p assume p: "\<And>q. q \<in> {p. p \<noteq> 0 \<and> p represents x} \<Longrightarrow> p dvd q"
-  show "p dvd min_int_poly x"
-    using assms by (intro p) auto
-next
-  fix p assume p: "p \<noteq> 0" "p represents x"
-  have "min_int_poly x represents x"
-    using assms by auto
-  hence "poly (gcd (of_int_poly (min_int_poly x)) (of_int_poly p)) x = 0"
-    using p by (intro poly_gcd_eq_0I) auto
-  hence "ipoly (gcd (min_int_poly x) p) x = 0"
-    by (subst (asm) gcd_of_int_poly) auto
-  hence "gcd (min_int_poly x) p represents x"
-    using p unfolding represents_def by auto
-
-  have "min_int_poly x dvd gcd (min_int_poly x) p \<or> is_unit (gcd (min_int_poly x) p)"
-    by (intro irreducibleD') auto
-  moreover from \<open>gcd (min_int_poly x) p represents x\<close> have "\<not>is_unit (gcd (min_int_poly x) p)"
-    by (auto simp: represents_def)
-  ultimately have "min_int_poly x dvd gcd (min_int_poly x) p"
-    by blast
-  also have "\<dots> dvd p"
-    by blast
-  finally show "min_int_poly x dvd p" .
-qed auto
-
-lemma min_int_poly_eqI:
-  fixes x :: "'a :: {field_char_0, field_gcd}"
-  assumes "p represents x" "irreducible p" "Polynomial.lead_coeff p \<ge> 0"
-  shows   "min_int_poly x = p"
-proof -
-  from assms have [simp]: "p \<noteq> 0"
-    by auto
-  have "Polynomial.lead_coeff p \<noteq> 0"
-    by auto
-  with assms(3) have "Polynomial.lead_coeff p > 0"
-    by linarith
-  moreover have "algebraic x"
-    using \<open>p represents x\<close> by (meson algebraic_iff_represents)
-  ultimately show ?thesis
-    unfolding min_int_poly_def
-    using the1_equality[OF algebraic_imp_represents_unique[OF \<open>algebraic x\<close>], of p] assms by auto
-qed
-
-
-subsection \<open>Divisibility of algebraic integers\<close>
-
-definition alg_dvd :: "'a :: field \<Rightarrow> 'a \<Rightarrow> bool" (infix "alg'_dvd" 50) where
-  "x alg_dvd y \<longleftrightarrow> (x = 0 \<longrightarrow> y = 0) \<and> algebraic_int (y / x)"
-
-lemma alg_dvd_imp_algebraic_int:
-  fixes x y :: "'a :: field_char_0"
-  shows "x alg_dvd y \<Longrightarrow> algebraic_int x \<Longrightarrow> algebraic_int y"
-  using algebraic_int_times[of "y / x" x] by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_0_left_iff [simp]: "0 alg_dvd x \<longleftrightarrow> x = 0"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_0_right [iff]: "x alg_dvd 0"
-  by (auto simp: alg_dvd_def)
-
-lemma one_alg_dvd_iff [simp]: "1 alg_dvd x \<longleftrightarrow> algebraic_int x"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_of_int [intro]:
-  assumes "x dvd y"
-  shows   "of_int x alg_dvd of_int y"
-proof (cases "of_int x = (0 :: 'a)")
-  case False
-  from assms obtain z where z: "y = x * z"
-    by (elim dvdE)
-  have "algebraic_int (of_int z)"
-    by auto
-  also have "of_int z = of_int y / (of_int x :: 'a)"
-    using False by (simp add: z field_simps)
-  finally show ?thesis
-    using False by (simp add: alg_dvd_def)
-qed (use assms in \<open>auto simp: alg_dvd_def\<close>)
-
-lemma alg_dvd_of_nat [intro]:
-  assumes "x dvd y"
-  shows   "of_nat x alg_dvd of_nat y"
-  using alg_dvd_of_int[of "int x" "int y"] assms by simp
-
-lemma alg_dvd_of_int_iff [simp]:
-  "(of_int x :: 'a :: field_char_0) alg_dvd of_int y \<longleftrightarrow> x dvd y"
-proof
-  assume "(of_int x :: 'a) alg_dvd of_int y"
-  hence "of_int y / (of_int x :: 'a) \<in> \<int>" and nz: "of_int x = (0::'a) \<longrightarrow> of_int y = (0::'a)"
-    by (auto simp: alg_dvd_def dest!: rational_algebraic_int_is_int)
-  then obtain n where "of_int y / of_int x = (of_int n :: 'a)"
-    by (elim Ints_cases)
-  hence "of_int y = (of_int (x * n) :: 'a)"
-    unfolding of_int_mult using nz by (auto simp: field_simps)
-  hence "y = x * n"
-    by (subst (asm) of_int_eq_iff)
-  thus "x dvd y"
-    by auto
-qed blast
-
-lemma alg_dvd_of_nat_iff [simp]:
-  "(of_nat x :: 'a :: field_char_0) alg_dvd of_nat y \<longleftrightarrow> x dvd y"
-proof -
-  have "(of_int (int x) :: 'a) alg_dvd of_int (int y) \<longleftrightarrow> x dvd y"
-    by (subst alg_dvd_of_int_iff) auto
-  thus ?thesis unfolding of_int_of_nat_eq .
-qed
-
-lemma alg_dvd_add [intro]:
-  fixes x y z :: "'a :: field_char_0"
-  shows "x alg_dvd y \<Longrightarrow> x alg_dvd z \<Longrightarrow> x alg_dvd (y + z)"
-  unfolding alg_dvd_def by (auto simp: add_divide_distrib)
-
-lemma alg_dvd_uminus_right [intro]: "x alg_dvd y \<Longrightarrow> x alg_dvd -y"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_uminus_right_iff [simp]: "x alg_dvd -y \<longleftrightarrow> x alg_dvd y"
-  using alg_dvd_uminus_right[of x y] alg_dvd_uminus_right[of x "-y"] by auto
-
-lemma alg_dvd_diff [intro]:
-  fixes x y z :: "'a :: field_char_0"
-  shows "x alg_dvd y \<Longrightarrow> x alg_dvd z \<Longrightarrow> x alg_dvd (y - z)"
-  unfolding alg_dvd_def by (auto simp: diff_divide_distrib)
-
-lemma alg_dvd_triv_left [intro]: "algebraic_int y \<Longrightarrow> x alg_dvd x * y"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_triv_right [intro]: "algebraic_int x \<Longrightarrow> y alg_dvd x * y"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_triv_left_iff: "x alg_dvd x * y \<longleftrightarrow> x = 0 \<or> algebraic_int y"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_triv_right_iff: "y alg_dvd x * y \<longleftrightarrow> y = 0 \<or> algebraic_int x"
-  by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_triv_left_iff' [simp]: "x \<noteq> 0 \<Longrightarrow> x alg_dvd x * y \<longleftrightarrow> algebraic_int y"
-  by (simp add: alg_dvd_triv_left_iff)
-
-lemma alg_dvd_triv_right_iff' [simp]: "y \<noteq> 0 \<Longrightarrow> y alg_dvd x * y \<longleftrightarrow> algebraic_int x"
-  by (simp add: alg_dvd_triv_right_iff)
-
-lemma alg_dvd_trans [trans]:
-  fixes x y z :: "'a :: field_char_0"
-  shows "x alg_dvd y \<Longrightarrow> y alg_dvd z \<Longrightarrow> x alg_dvd z"
-  using algebraic_int_times[of "y / x" "z / y"] by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_mono [simp]: 
-  fixes a b c d :: "'a :: field_char_0"
-  shows "a alg_dvd c \<Longrightarrow> b alg_dvd d \<Longrightarrow> (a * b) alg_dvd (c * d)"
-  using algebraic_int_times[of "c / a" "d / b"] by (auto simp: alg_dvd_def)
-
-lemma alg_dvd_mult [simp]: 
-  fixes a b c :: "'a :: field_char_0"
-  shows "a alg_dvd c \<Longrightarrow> algebraic_int b \<Longrightarrow> a alg_dvd (b * c)"
-  using alg_dvd_mono[of a c 1 b] by (auto simp: mult.commute)
-
-lemma alg_dvd_mult2 [simp]:
-  fixes a b c :: "'a :: field_char_0"
-  shows "a alg_dvd b \<Longrightarrow> algebraic_int c \<Longrightarrow> a alg_dvd (b * c)"
-  using alg_dvd_mult[of a b c] by (simp add: mult.commute)
-
-lemma alg_dvd_int_rat:
-  fixes y :: "'a :: field_char_0"
-  assumes "of_int x alg_dvd y" and "y \<in> \<rat>"
-  shows   "\<exists>n. y = of_int n \<and> x dvd n"
-proof (cases "x = 0")
-  case False
-  have "y / of_int x \<in> \<int>"
-    by (intro rational_algebraic_int_is_int) (use assms in \<open>auto simp: alg_dvd_def\<close>)
-  then obtain n where n: "of_int n = y / (of_int x :: 'a)"
-    by (elim Ints_cases) auto
-  hence "y = of_int (n * x)"
-    using False by (simp add: field_simps)
-  thus ?thesis by (intro exI[of _ "x * n"]) auto
-qed (use assms in auto)
-
-lemma prod_alg_dvd_prod:
-  fixes f :: "'a \<Rightarrow> 'b :: field_char_0"
-  assumes "\<And>x. x \<in> A \<Longrightarrow> f x alg_dvd g x"
-  shows   "prod f A alg_dvd prod g A"
-  using assms by (induction A rule: infinite_finite_induct) auto
-
-lemma alg_dvd_sum:
-  fixes f :: "'a \<Rightarrow> 'b :: field_char_0"
-  assumes "\<And>x. x \<in> A \<Longrightarrow> y alg_dvd f x"
-  shows   "y alg_dvd sum f A"
-  using assms by (induction A rule: infinite_finite_induct) auto
-
-lemma not_alg_dvd_sum:
-  fixes f :: "'a \<Rightarrow> 'b :: field_char_0"
-  assumes "\<And>x. x \<in> A-{x'} \<Longrightarrow> y alg_dvd f x"
-  assumes "\<not>y alg_dvd f x'"
-  assumes "x' \<in> A" "finite A"
-  shows   "\<not>y alg_dvd sum f A"
-proof
-  assume *: "y alg_dvd sum f A"
-  have "y alg_dvd sum f A - sum f (A - {x'})"
-    using \<open>x' \<in> A\<close> by (intro alg_dvd_diff[OF * alg_dvd_sum] assms) auto
-  also have "\<dots> = sum f (A - (A - {x'}))"
-    using assms by (subst sum_diff) auto
-  also have "A - (A - {x'}) = {x'}"
-    using assms by auto
-  finally show False using assms by simp
-qed
-
-lemma fact_alg_dvd_poly_higher_pderiv:
-  fixes p :: "'a :: field_char_0 poly"
-  assumes "\<And>i. algebraic_int (poly.coeff p i)" "algebraic_int x" "m \<le> k"
-  shows   "fact m alg_dvd poly ((pderiv ^^ k) p) x"
-  unfolding poly_altdef
-proof (intro alg_dvd_sum, goal_cases)
-  case (1 i)
-  have "(of_int (fact m) :: 'a) alg_dvd (of_int (fact k))"
-    by (intro alg_dvd_of_int fact_dvd assms)
-  also have "(of_int (fact k) :: 'a) alg_dvd of_int (pochhammer (int i + 1) k)"
-    using fact_dvd_pochhammer[of k "i + k"]
-    by (intro alg_dvd_of_int fact_dvd_pochhammer) (auto simp: algebra_simps)
-  finally have "fact m alg_dvd (pochhammer (of_nat i + 1) k :: 'a)"
-    by (simp flip: pochhammer_of_int)
-  also have "\<dots> alg_dvd pochhammer (of_nat i + 1) k * poly.coeff p (i + k)"
-    by (rule alg_dvd_triv_left) (rule assms)
-  also have "\<dots> = poly.coeff ((pderiv ^^ k) p) i"
-    unfolding coeff_higher_pderiv by (simp add: add_ac flip: pochhammer_of_int)
-  also have "\<dots> alg_dvd poly.coeff ((pderiv ^^ k) p) i * x ^ i"
-    by (intro alg_dvd_triv_left algebraic_int_power assms)
-  finally show ?case .
-qed
-
 
 subsection \<open>Main proof\<close>
 
@@ -2255,8 +910,8 @@ proof
   moreover have "eventually (\<lambda>p. fact (p - 1) ^ n > C' * C p ^ n) sequentially"
   proof (cases "R = 0")
     case True
-    have "eventually (\<lambda>p. p * n > 1) at_top"
-      using \<open>n > 0\<close> by real_asymp
+    have "eventually (\<lambda>p. p * n > 1) at_top" using \<open>n > 0\<close>
+      by (intro eventually_compose_filterlim[OF eventually_gt_at_top] mult_nat_right_at_top)
     thus ?thesis 
       by eventually_elim (use \<open>n > 0\<close> True in \<open>auto simp: C_def power_0_left mult_ac\<close>)
   next
@@ -2271,8 +926,8 @@ proof
       by simp
     also have "(\<lambda>p. C p ^ n) \<in> O(\<lambda>p. ((2 * R * l) ^ (n * p)) ^ n)"
     proof (rule landau_o.big_power[OF bigthetaD1])
-      have np: "eventually (\<lambda>p::nat. n * p > 1) at_top"
-        using \<open>n > 0\<close> by real_asymp
+      have np: "eventually (\<lambda>p. p * n > 0) at_top" using \<open>n > 0\<close>
+        by (intro eventually_compose_filterlim[OF eventually_gt_at_top] mult_nat_right_at_top)
       have "eventually (\<lambda>p. (2 * R) * C p = (2 * R * l) ^ (n * p)) at_top"
         using np
       proof eventually_elim
@@ -2301,7 +956,8 @@ proof
       hence "(\<lambda>p. D ^ p) \<in> \<Theta>(\<lambda>p. D ^ (p - 1))"
         using \<open>D > 0\<close> by simp
       also have "(\<lambda>p. D ^ (p - 1)) \<in> o(\<lambda>p. fact (p - 1))"
-        by (intro landau_o.small.compose[OF exponential_smallo_fact]) real_asymp
+        by (intro smalloI_tendsto[OF filterlim_compose[OF power_over_fact_tendsto_0]]
+                  filterlim_minus_nat_at_top) auto
       finally show "(\<lambda>p. D ^ p) \<in> o(\<lambda>x. fact (x - 1))" .
     qed fact+
     finally have smallo: "(\<lambda>p. C' * C p ^ n) \<in> o(\<lambda>p. fact (p - 1) ^ n)" .
@@ -2384,7 +1040,7 @@ proof (rule ccontr)
     fix x assume "x \<in> X"
     hence "ipoly (min_int_poly x) x = 0"
       by (intro ipoly_min_int_poly alg)
-    thus "x :  Roots"
+    thus "x \<in> Roots"
       using \<open>finite X\<close> \<open>x \<in> X\<close>
       by (auto simp: Roots_def P_def of_int_poly_hom.hom_prod poly_prod)
   qed
@@ -2829,14 +1485,480 @@ qed
 
 subsection \<open>Removing the restriction to integer coefficients\<close>
 
-theorem Hermite_Lindemann:
-  fixes c :: "complex \<Rightarrow> complex"
+lemma Hermite_Lindemann_aux3:
+  fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> rat"
+  assumes "finite X"
+  assumes nz:   "\<And>x. x \<in> X \<Longrightarrow> \<beta> x \<noteq> 0"
+  assumes alg:  "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
+  assumes sum0: "(\<Sum>x\<in>X. of_rat (\<beta> x) * exp x) = 0"
+  shows   "X = {}"
+proof -
+  define l :: int where "l = Lcm ((snd \<circ> quotient_of \<circ> \<beta>) ` X)"
+  have [simp]: "snd (quotient_of r) \<noteq> 0" for r
+    using quotient_of_denom_pos'[of r] by simp
+  have [simp]: "l \<noteq> 0"
+    using \<open>finite X\<close> by (auto simp: l_def Lcm_0_iff)
+
+  have "of_int l * \<beta> x \<in> \<int>" if "x \<in> X" for x
+  proof -
+    define a b where "a = fst (quotient_of (\<beta> x))" and "b = snd (quotient_of (\<beta> x))"
+    have "b > 0"
+      using quotient_of_denom_pos'[of "\<beta> x"] by (auto simp: b_def)
+    have "\<beta> x = of_int a / of_int b"
+      by (intro quotient_of_div) (auto simp: a_def b_def)
+    also have "of_int l * \<dots> = of_int (l * a) / of_int b"
+      using \<open>b > 0\<close> by (simp add: field_simps)
+    also have "\<dots> \<in> \<int>" using that
+      by (intro of_int_divide_in_Ints) (auto simp: l_def b_def)
+    finally show ?thesis .
+  qed
+  hence "\<forall>x\<in>X. \<exists>n. of_int n = of_int l * \<beta> x"
+    using Ints_cases by metis
+  then obtain \<beta>' where \<beta>': "of_int (\<beta>' x) = of_int l * \<beta> x" if "x \<in> X" for x
+    by metis
+
+  show ?thesis
+  proof (rule Hermite_Lindemann_aux2)
+    have "0 = of_int l * (\<Sum>x\<in>X. of_rat (\<beta> x) * exp x :: complex)"
+      by (simp add: sum0)
+    also have "\<dots> = (\<Sum>x\<in>X. of_int (\<beta>' x) * exp x)"
+      unfolding sum_distrib_left
+    proof (rule sum.cong, goal_cases)
+      case (2 x)
+      have "of_int l * of_rat (\<beta> x) = of_rat (of_int l * \<beta> x)"
+        by (simp add: of_rat_mult)
+      also have "of_int l * \<beta> x = of_int (\<beta>' x)"
+        using 2 by (rule \<beta>' [symmetric])
+      finally show ?case by (simp add: mult_ac)
+    qed simp_all
+    finally show "\<dots> = 0" ..
+  next
+    fix x assume "x \<in> X"
+    hence "of_int (\<beta>' x) \<noteq> (0 :: rat)" using nz
+      by (subst \<beta>') auto
+    thus "\<beta>' x \<noteq> 0"
+      by auto
+  qed (use alg \<open>finite X\<close> in auto)
+qed
+
+lemma Hermite_Lindemann_aux4:
+  fixes \<beta> :: "complex \<Rightarrow> complex"
   assumes [intro]: "finite X"
   assumes alg1: "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
-  assumes alg2: "\<And>x. x \<in> X \<Longrightarrow> algebraic (c x)"
-  assumes sum0: "(\<Sum>x\<in>X. c x * exp \<alpha>) = 0"
-  shows   "\<forall>x\<in>X. c x = 0"
-  sorry
+  assumes alg2: "\<And>x. x \<in> X \<Longrightarrow> algebraic (\<beta> x)"
+  assumes nz:   "\<And>x. x \<in> X \<Longrightarrow> \<beta> x \<noteq> 0"
+  assumes sum0: "(\<Sum>x\<in>X. \<beta> x * exp x) = 0"
+  shows   "X = {}"
+proof (rule ccontr)
+  assume X: "X \<noteq> {}"
+  note [intro!] = finite_PiE
+
+  define P :: "int poly" where "P = \<Prod>((min_int_poly \<circ> \<beta>) ` X)"
+  define Roots :: "complex set" where "Roots = {x. ipoly P x = 0}"
+  have "0 \<notin> Roots" using \<open>finite X\<close> alg2 nz
+    by (auto simp: Roots_def P_def poly_prod)
+  have [simp]: "P \<noteq> 0"
+    using \<open>finite X\<close> by (auto simp: P_def)
+  have [intro]: "finite Roots"
+    unfolding Roots_def by (intro poly_roots_finite) auto
+
+  have "\<beta> ` X \<subseteq> Roots"
+  proof safe
+    fix x assume "x \<in> X"
+    hence "ipoly (min_int_poly (\<beta> x)) (\<beta> x) = 0"
+      by (intro ipoly_min_int_poly alg2)
+    thus "\<beta> x \<in> Roots"
+      using \<open>finite X\<close> \<open>x \<in> X\<close>
+      by (auto simp: Roots_def P_def of_int_poly_hom.hom_prod poly_prod)
+  qed
+
+  define n where "n = card Roots"
+  define m where "m = card X"
+  have "Roots \<noteq> {}"
+    using \<open>\<beta> ` X \<subseteq> Roots\<close> \<open>X \<noteq> {}\<close> by auto
+  hence "n > 0" "m > 0"
+    using \<open>finite Roots\<close> \<open>finite X\<close> \<open>X \<noteq> {}\<close> by (auto simp: n_def m_def)
+
+  obtain Root where Root: "bij_betw Root {..<n} Roots"
+    using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
+  define unRoot :: "complex \<Rightarrow> nat" where "unRoot = inv_into {..<n} Root"
+  have unRoot: "bij_betw unRoot Roots {..<n}"
+    unfolding unRoot_def by (intro bij_betw_inv_into Root)
+  have unRoot_Root [simp]: "unRoot (Root i) = i" if "i < n" for i
+    unfolding unRoot_def using Root that by (subst inv_into_f_f) (auto simp: bij_betw_def)
+  have Root_unRoot [simp]: "Root (unRoot x) = x" if "x \<in> Roots" for x
+    unfolding unRoot_def using Root that by (subst f_inv_into_f) (auto simp: bij_betw_def)
+  have [simp, intro]: "Root i \<in> Roots" if "i < n" for i
+    using Root that by (auto simp: bij_betw_def)
+  have [simp, intro]: "unRoot x < n" if "x \<in> Roots" for x
+    using unRoot that by (auto simp: bij_betw_def)
+
+  have "squarefree (of_int_poly P :: complex poly)"
+    unfolding P_def of_int_poly_hom.hom_prod o_def
+  proof (rule squarefree_prod_coprime; safe)
+    fix x assume "x \<in> X"
+    thus "squarefree (of_int_poly (min_int_poly (\<beta> x)) :: complex poly)"
+      by (intro squarefree_of_int_polyI) auto
+  next
+    fix x y assume xy: "x \<in> X" "y \<in> X" "min_int_poly (\<beta> x) \<noteq> min_int_poly (\<beta> y)"
+    thus "Rings.coprime (of_int_poly (min_int_poly (\<beta> x)))
+            (of_int_poly (min_int_poly (\<beta> y)) :: complex poly)"
+      by (intro coprime_of_int_polyI[OF primes_coprime]) auto
+  qed
+
+  define Roots_ms :: "complex multiset set" where
+    "Roots_ms = {Y. set_mset Y \<subseteq> X \<and> size Y = n ^ m}"
+  have [intro]: "finite Roots_ms"
+    unfolding Roots_ms_def by (rule finite_multisets_of_size) auto
+  define tuples :: "complex multiset \<Rightarrow> ((complex \<Rightarrow> complex) \<Rightarrow> complex) set"
+    where "tuples = (\<lambda>Y. {f\<in>(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X. image_mset f (mset_set (X \<rightarrow>\<^sub>E Roots)) = Y})"
+
+  have fin1 [simp]: "finite (X \<rightarrow>\<^sub>E Roots)"
+    by auto
+  have [intro]: "finite (tuples Y)" for Y
+    unfolding tuples_def by (rule finite_subset[of _ "(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"]) auto
+  have [simp]: "card (X \<rightarrow>\<^sub>E Roots) = n ^ m"
+    by (subst card_PiE) (auto simp: m_def n_def)
+
+  define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
+    "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
+  have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
+    using bij_betw_permutations[OF Root] unfolding convert_perm_def unRoot_def .
+  have permutes_convert_perm [intro]: "convert_perm \<sigma> permutes Roots" if "\<sigma> permutes {..<n}" for \<sigma>
+    using that bij_convert unfolding bij_betw_def by blast
+
+  have bij_betw_compose_perm1:
+    "bij_betw (\<lambda>f. restrict (\<pi> \<circ> f) X) (X \<rightarrow>\<^sub>E Roots) (X \<rightarrow>\<^sub>E Roots)" if "\<pi> permutes Roots" for \<pi>
+    using that by (rule bij_betw_compose_left_perm_PiE)
+
+  have bij_betw_compose_perm2: 
+    "bij_betw (\<lambda>f. restrict (\<lambda>g. f (restrict (\<pi> \<circ> g) X)) (X \<rightarrow>\<^sub>E Roots)) (tuples Y) (tuples Y)"
+    if \<pi>: "\<pi> permutes Roots" and "Y \<in> Roots_ms" for \<pi> Y
+  proof (rule bij_betwI)
+    have *: "(\<lambda>f. restrict (\<lambda>g. f (restrict (\<pi> \<circ> g) X)) (X \<rightarrow>\<^sub>E Roots)) \<in> tuples Y \<rightarrow> tuples Y"
+      if \<pi>: "\<pi> permutes Roots" for \<pi>
+    proof
+      fix f assume f: "f \<in> tuples Y"
+      hence f': "f \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"
+        by (auto simp: tuples_def)
+      define f' where "f' = (\<lambda>g. f (restrict (\<pi> \<circ> g) X))"
+      have "f' \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow> X"
+        unfolding f'_def using f' bij_betw_apply[OF bij_betw_compose_perm1[OF \<pi>]] by blast
+      hence "restrict f' (X \<rightarrow>\<^sub>E Roots) \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"
+        by simp
+      moreover have "image_mset (restrict f' (X \<rightarrow>\<^sub>E Roots)) (mset_set (X \<rightarrow>\<^sub>E Roots)) = Y"
+      proof -
+        have "image_mset (restrict f' (X \<rightarrow>\<^sub>E Roots)) (mset_set (X \<rightarrow>\<^sub>E Roots)) =
+              image_mset f' (mset_set (X \<rightarrow>\<^sub>E Roots))"
+          by (intro image_mset_cong) auto
+        also have "\<dots> = image_mset f (image_mset (\<lambda>g. restrict (\<pi> \<circ> g) X) (mset_set (X \<rightarrow>\<^sub>E Roots)))"
+          unfolding f'_def o_def multiset.map_comp by (simp add: o_def)
+        also have "image_mset (\<lambda>g. restrict (\<pi> \<circ> g) X) (mset_set (X \<rightarrow>\<^sub>E Roots)) =
+                   mset_set (X \<rightarrow>\<^sub>E Roots)"
+          by (intro bij_betw_image_mset_set bij_betw_compose_left_perm_PiE \<pi>)
+        also have "image_mset f \<dots> = Y"
+          using f by (simp add: tuples_def)
+        finally show ?thesis .
+      qed
+      ultimately show "restrict f' (X \<rightarrow>\<^sub>E Roots) \<in> tuples Y"
+        by (auto simp: tuples_def)
+    qed
+    show "(\<lambda>f. restrict (\<lambda>g. f (restrict (\<pi> \<circ> g) X)) (X \<rightarrow>\<^sub>E Roots)) \<in> tuples Y \<rightarrow> tuples Y"
+      by (intro * \<pi>)
+    show "(\<lambda>f. restrict (\<lambda>g. f (restrict (inv_into UNIV \<pi> \<circ> g) X)) (X \<rightarrow>\<^sub>E Roots)) \<in> tuples Y \<rightarrow> tuples Y"
+      by (intro * permutes_inv \<pi>)
+  next
+    have *: "(\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. (\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. f (restrict (\<pi> \<circ> g) X))
+                (restrict (inv_into UNIV \<pi> \<circ> g) X)) = f" (is "?lhs = _")
+      if f: "f \<in> tuples Y" and \<pi>: "\<pi> permutes Roots" for f \<pi>
+    proof
+      fix g show "?lhs g = f g"
+      proof (cases "g \<in> X \<rightarrow>\<^sub>E Roots")
+        case True
+        have "restrict (\<pi> \<circ> restrict (inv_into UNIV \<pi> \<circ> g) X) X = g"
+          using True
+          by (intro ext) (auto simp: permutes_inverses[OF \<pi>])
+        thus ?thesis using True
+          by (auto simp: permutes_in_image[OF permutes_inv[OF \<pi>]])
+      qed (use f in \<open>auto simp: tuples_def\<close>)
+    qed
+    show "(\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. (\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. f (restrict (\<pi> \<circ> g) X))
+                (restrict (inv_into UNIV \<pi> \<circ> g) X)) = f" if "f \<in> tuples Y" for f
+      using *[OF that \<pi>] .
+    show "(\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. (\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. f (restrict (inv_into UNIV \<pi> \<circ> g) X))
+                (restrict (\<pi> \<circ> g) X)) = f" if "f \<in> tuples Y" for f
+      using *[OF that permutes_inv[OF \<pi>]] permutes_inv_inv[OF \<pi>] by simp
+  qed
+
+  define \<beta>' :: "complex multiset \<Rightarrow> complex"
+    where "\<beta>' = (\<lambda>Y. \<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g))"
+  have "\<beta>' Y \<in> \<rat>" if Y: "Y \<in> Roots_ms" for Y
+  proof -
+    define Q :: "complex mpoly"
+      where "Q = (\<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (unRoot (g (f g))))"
+
+    have "insertion Root Q \<in> \<rat>"
+    proof (rule symmetric_poly_of_roots_in_subring)
+      show "ring_closed (\<rat> :: complex set)"
+        by standard auto
+      then interpret ring_closed "\<rat> :: complex set" .
+      show "\<forall>m. coeff Q m \<in> \<rat>"
+        by (auto simp: Q_def coeff_Var when_def intro!: sum_in_Rats coeff_prod_closed)
+    next
+      show "symmetric_mpoly {..<n} Q"
+        unfolding symmetric_mpoly_def
+      proof safe
+        fix \<pi> assume \<pi>: "\<pi> permutes {..<n}"
+        define \<pi>' where "\<pi>' = convert_perm (inv_into UNIV \<pi>)"
+        have \<pi>': "\<pi>' permutes Roots"
+          unfolding \<pi>'_def by (intro permutes_convert_perm permutes_inv \<pi>)
+        have "mpoly_map_vars \<pi> Q = (\<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (\<pi> (unRoot (g (f g)))))"
+          unfolding Q_def by (simp add: permutes_bij[OF \<pi>])
+        also have "\<dots> = (\<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (unRoot (g (f (restrict (\<pi>' \<circ> g) X)))))"
+        proof (rule sum.cong, goal_cases)
+          case (2 f)
+          have f: "f \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"
+            using 2 by (auto simp: tuples_def)
+          have "(\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (\<pi> (unRoot (g (f g))))) =
+                (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (\<pi> (unRoot (restrict (\<pi>' \<circ> g) X (f (restrict (\<pi>' \<circ> g) X))))))"
+            using \<pi>' by (intro prod.reindex_bij_betw [symmetric] bij_betw_compose_perm1)
+          also have "\<dots> = (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (unRoot (g (f (restrict (\<pi>' \<circ> g) X)))))"
+          proof (intro prod.cong refl arg_cong[of _ _ Var])
+            fix g assume g: "g \<in> X \<rightarrow>\<^sub>E Roots"
+            have "restrict (\<pi>' \<circ> g) X \<in> X \<rightarrow>\<^sub>E Roots"
+              using bij_betw_compose_perm1[OF \<pi>'] g unfolding bij_betw_def by blast
+            hence *: "f (restrict (\<pi>' \<circ> g) X) \<in> X"
+              by (rule PiE_mem[OF f])
+            hence **: "g (f (restrict (\<pi>' \<circ> g) X)) \<in> Roots"
+              by (rule PiE_mem[OF g])
+
+            have "unRoot (restrict (\<pi>' \<circ> g) X (f (restrict (\<pi>' \<circ> g) X))) =
+                   unRoot (Root (inv_into UNIV \<pi> (unRoot (g (f (restrict (\<pi>' \<circ> g) X))))))"
+              using * ** by (subst \<pi>'_def) (auto simp: convert_perm_def)
+            also have "inv_into UNIV \<pi> (unRoot (g (f (restrict (\<pi>' \<circ> g) X)))) \<in> {..<n}"
+              using ** by (subst permutes_in_image[OF permutes_inv[OF \<pi>]]) auto
+            hence "unRoot (Root (inv_into UNIV \<pi> (unRoot (g (f (restrict (\<pi>' \<circ> g) X)))))) =
+                   inv_into UNIV \<pi> (unRoot (g (f (restrict (\<pi>' \<circ> g) X))))"
+              by (intro unRoot_Root) auto
+            also have "\<pi> \<dots> = unRoot (g (f (restrict (\<pi>' \<circ> g) X)))"
+              by (rule permutes_inverses[OF \<pi>])
+            finally show "\<pi> (unRoot (restrict (\<pi>' \<circ> g) X (f (restrict (\<pi>' \<circ> g) X)))) =
+                          unRoot (g (f (restrict (\<pi>' \<circ> g) X)))" .
+          qed
+          finally show ?case .
+        qed simp_all
+        also have "\<dots> = (\<Sum>x\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (unRoot (g ((\<lambda>g\<in>X \<rightarrow>\<^sub>E Roots. x (restrict (\<pi>' \<circ> g) X)) g))))"
+          by (intro sum.cong prod.cong refl) auto
+        also have "\<dots> = Q"
+          unfolding Q_def
+          by (rule sum.reindex_bij_betw[OF bij_betw_compose_perm2]) (use \<pi>' Y in simp_all)
+        finally show "mpoly_map_vars \<pi> Q = Q" .
+      qed
+    next
+      show "vars Q \<subseteq> {..<n}"
+        unfolding Q_def
+        by (intro order.trans[OF vars_sum] UN_least order.trans[OF vars_prod])
+           (auto simp: vars_Var tuples_def)
+    next
+      define lc where "lc = Polynomial.lead_coeff P"
+      have "lc \<noteq> 0"
+        unfolding lc_def by auto
+      thus "inverse (of_int lc) * (of_int lc :: complex) = 1" and "inverse (of_int lc) \<in> \<rat>"
+        by auto
+      have "rsquarefree (of_int_poly P :: complex poly)"
+        using \<open>squarefree (of_int_poly P :: complex poly)\<close> by (intro squarefree_imp_rsquarefree)
+      hence "of_int_poly P = Polynomial.smult (of_int lc) (\<Prod>x\<in>Roots. [:-x, 1:])"
+        unfolding lc_def of_int_hom.hom_lead_coeff[symmetric] Roots_def
+        by (rule complex_poly_decompose_rsquarefree [symmetric])
+      also have "(\<Prod>x\<in>Roots. [:-x, 1:]) = (\<Prod>i<n. [:-Root i, 1:])"
+        by (rule prod.reindex_bij_betw[OF Root, symmetric])
+      finally show "of_int_poly P = Polynomial.smult (of_int lc) (\<Prod>i<n. [:- Root i, 1:])" .
+    qed auto
+    also have "insertion Root Q = (\<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Root (unRoot (g (f g))))"
+      by (simp add: Q_def insertion_sum insertion_prod)
+    also have "\<dots> = \<beta>' Y"
+      unfolding \<beta>'_def by (intro sum.cong prod.cong refl Root_unRoot) (auto simp: tuples_def)
+    finally show ?thesis .
+  qed
+  hence "\<forall>Y\<in>Roots_ms. \<exists>x. \<beta>' Y = of_rat x"
+    by (auto elim!: Rats_cases)
+  then obtain \<beta>'' :: "complex multiset \<Rightarrow> rat"
+    where \<beta>'': "\<And>Y. Y \<in> Roots_ms \<Longrightarrow> \<beta>' Y = of_rat (\<beta>'' Y)"
+    by metis
+
+  define \<beta>''' :: "complex \<Rightarrow> rat" where "\<beta>''' = (\<lambda>\<alpha>. \<Sum>Y\<in>Roots_ms. (\<beta>'' Y when \<Sum>\<^sub>#Y = \<alpha>))"
+  have supp_\<beta>''': "{x. \<beta>''' x \<noteq> 0} \<subseteq> sum_mset ` Roots_ms"
+    by (auto simp: \<beta>'''_def when_def elim!: sum.not_neutral_contains_not_neutral split: if_splits)
+  
+  have "0 = (\<Sum>x\<in>X. \<beta> x * exp x)"
+    using sum0 ..
+  also have "\<dots> = (\<Sum>x\<in>X. restrict \<beta> X x * exp x)"
+    by (intro sum.cong) auto
+  also have "\<dots> dvd (\<Prod>f \<in> X \<rightarrow>\<^sub>E Roots. \<Sum>x\<in>X. f x * exp x)"
+    by (rule dvd_prodI) (use \<open>\<beta> ` X \<subseteq> Roots\<close> in \<open>auto simp: id_def\<close>)
+  also have "\<dots> = (\<Sum>f\<in>(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g) * exp (f g))"
+    by (rule prod_sum_PiE) auto
+  also have "\<dots> = (\<Sum>f\<in>(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X. (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g)) * exp (\<Sum>g\<in>X \<rightarrow>\<^sub>E Roots. f g))"
+    by (simp add: prod.distrib exp_sum)
+  also have "\<dots> = (\<Sum>(Y,f)\<in>Sigma Roots_ms tuples.
+                    (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g)) * exp (\<Sum>g\<in>X \<rightarrow>\<^sub>E Roots. f g))"
+    by (intro sum.reindex_bij_witness[of _ snd "\<lambda>f. (image_mset f (mset_set (X \<rightarrow>\<^sub>E Roots)), f)"])
+       (auto simp: Roots_ms_def tuples_def)
+  also have "\<dots> = (\<Sum>(Y,f)\<in>Sigma Roots_ms tuples. (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g)) * exp (\<Sum>\<^sub>#Y))"
+    by (intro sum.cong) (auto simp: tuples_def sum_unfold_sum_mset)
+  also have "\<dots> = (\<Sum>Y\<in>Roots_ms. \<beta>' Y * exp (\<Sum>\<^sub>#Y))"
+    unfolding \<beta>'_def sum_distrib_right by (rule sum.Sigma [symmetric]) auto
+  also have "\<dots> = (\<Sum>Y\<in>Roots_ms. of_rat (\<beta>'' Y) * exp (\<Sum>\<^sub>#Y))"
+    by (intro sum.cong) (auto simp: \<beta>'')
+  also have "\<dots> = (\<Sum>Y\<in>Roots_ms. Sum_any (\<lambda>\<alpha>. of_rat (\<beta>'' Y when \<Sum>\<^sub># Y = \<alpha>) * exp \<alpha>))"
+  proof (rule sum.cong, goal_cases)
+    case (2 Y)
+    have "Sum_any (\<lambda>\<alpha>. of_rat (\<beta>'' Y when \<Sum>\<^sub># Y = \<alpha>) * exp \<alpha>) =
+          (\<Sum>\<alpha>\<in>{\<Sum>\<^sub># Y}. of_rat (\<beta>'' Y when \<Sum>\<^sub># Y = \<alpha>) * exp \<alpha>)"
+      by (intro Sum_any.expand_superset) auto
+    thus ?case by simp
+  qed auto
+  also have "\<dots> = Sum_any (\<lambda>\<alpha>. of_rat (\<beta>''' \<alpha>) * exp \<alpha>)"
+    unfolding \<beta>'''_def of_rat_sum sum_distrib_right by (subst Sum_any_sum_swap) auto
+  also have "\<dots> = (\<Sum>\<alpha> | \<beta>''' \<alpha> \<noteq> 0. of_rat (\<beta>''' \<alpha>) * exp \<alpha>)"
+    by (intro Sum_any.expand_superset finite_subset[OF supp_\<beta>''']) auto
+  finally have "(\<Sum>\<alpha> | \<beta>''' \<alpha> \<noteq> 0. of_rat (\<beta>''' \<alpha>) * exp \<alpha>) = 0"
+    by auto
+
+  have "{\<alpha>. \<beta>''' \<alpha> \<noteq> 0} = {}"
+  proof (rule Hermite_Lindemann_aux3)
+    show "finite {\<alpha>. \<beta>''' \<alpha> \<noteq> 0}"
+      by (rule finite_subset[OF supp_\<beta>''']) auto
+  next
+    show "(\<Sum>\<alpha> | \<beta>''' \<alpha> \<noteq> 0. of_rat (\<beta>''' \<alpha>) * exp \<alpha>) = 0"
+    by fact
+  next
+    fix \<alpha> assume \<alpha>: "\<alpha> \<in> {\<alpha>. \<beta>''' \<alpha> \<noteq> 0}"
+    then obtain Y where Y: "Y \<in> Roots_ms" "\<alpha> = sum_mset Y"
+      using supp_\<beta>''' by auto
+    thus "algebraic \<alpha>" using alg1
+      by (auto simp: Roots_ms_def)
+  qed auto
+
+  moreover have "\<exists>\<alpha>. \<beta>''' \<alpha> \<noteq> 0"
+  proof -
+    define \<alpha>_max where "\<alpha>_max = complex_lex.Max X"
+    have [simp]: "\<alpha>_max \<in> X"
+      unfolding \<alpha>_max_def using \<open>X \<noteq> {}\<close> by (intro complex_lex.Max_in) auto
+    define Y_max :: "complex multiset" where "Y_max = replicate_mset (n ^ m) \<alpha>_max"
+    define f_max where "f_max = restrict (\<lambda>_. \<alpha>_max) (X \<rightarrow>\<^sub>E Roots)"
+    have [simp]: "Y_max \<in> Roots_ms"
+      by (auto simp: Y_max_def Roots_ms_def)
+    have "tuples Y_max = {f_max}"
+    proof safe
+      have "image_mset (\<lambda>_\<in>X \<rightarrow>\<^sub>E Roots. \<alpha>_max) (mset_set (X \<rightarrow>\<^sub>E Roots)) =
+            image_mset (\<lambda>_. \<alpha>_max) (mset_set (X \<rightarrow>\<^sub>E Roots))"
+        by (intro image_mset_cong) auto
+      thus "f_max \<in> tuples Y_max"
+        by (auto simp: f_max_def tuples_def Y_max_def image_mset_const_eq)
+    next
+      fix f assume "f \<in> tuples Y_max"
+      hence f: "f \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X" "image_mset f (mset_set (X \<rightarrow>\<^sub>E Roots)) = Y_max"
+        by (auto simp: tuples_def)
+      hence "\<forall>g \<in># mset_set (X \<rightarrow>\<^sub>E Roots). f g = \<alpha>_max"
+        by (intro image_mset_eq_replicate_msetD[where n = "n ^ m"]) (auto simp: Y_max_def)
+      thus "f = f_max"
+        using f by (auto simp: Y_max_def fun_eq_iff f_max_def)
+    qed
+
+    have "\<beta>''' (of_nat (n ^ m) * \<alpha>_max) = (\<Sum>Y\<in>Roots_ms. \<beta>'' Y when \<Sum>\<^sub># Y = of_nat (n ^ m) * \<alpha>_max)"
+      unfolding \<beta>'''_def Roots_ms_def ..
+    also have "\<Sum>\<^sub># Y \<noteq> of_nat n ^ m * \<alpha>_max" if "Y \<in> Roots_ms" "Y \<noteq> Y_max" for Y
+    proof -
+      have "\<not>set_mset Y \<subseteq> {\<alpha>_max}"
+        using set_mset_subset_singletonD[of Y "\<alpha>_max"] that
+        by (auto simp: Roots_ms_def Y_max_def split: if_splits)
+      then obtain y where y: "y \<in># Y" "y \<noteq> \<alpha>_max"
+        by auto
+      have "y \<in> X" "set_mset (Y - {#y#}) \<subseteq> X"
+        using y that by (auto simp: Roots_ms_def dest: in_diffD)
+      hence "y \<le>\<^sub>\<complex> \<alpha>_max"
+        using y unfolding \<alpha>_max_def by (intro complex_lex.Max_ge) auto
+      with y have "y <\<^sub>\<complex> \<alpha>_max"
+        by auto
+      have *: "Y = {#y#} + (Y - {#y#})"
+        using y by simp
+      have "sum_mset Y = y + sum_mset (Y - {#y#})"
+        by (subst *) auto
+      also have "\<dots> <\<^sub>\<complex> \<alpha>_max + sum_mset (Y - {#y#})"
+        by (intro add_strict_right_mono_complex_lex) fact
+      also have "\<dots> \<le>\<^sub>\<complex> \<alpha>_max + sum_mset (replicate_mset (n ^ m - 1) \<alpha>_max)"
+        unfolding \<alpha>_max_def using that y \<open>set_mset (Y - {#y#}) \<subseteq> X\<close>
+        by (intro add_left_mono_complex_lex sum_mset_mono_complex_lex
+                  rel_mset_replicate_mset_right complex_lex.Max_ge)
+           (auto simp: Roots_ms_def size_Diff_singleton)
+      also have "\<dots> = of_nat (Suc (n ^ m - 1)) * \<alpha>_max"
+        by (simp add: algebra_simps)
+      also have "Suc (n ^ m - 1) = n ^ m"
+        using \<open>n > 0\<close> by simp
+      finally show ?thesis by simp
+    qed
+    hence "(\<Sum>Y\<in>Roots_ms. \<beta>'' Y when \<Sum>\<^sub># Y = of_nat (n ^ m) * \<alpha>_max) = (\<Sum>Y\<in>{Y_max}. \<beta>'' Y when \<Sum>\<^sub># Y = of_nat (n ^ m) * \<alpha>_max)"
+      by (intro sum.mono_neutral_right ballI) auto
+    also have "\<dots> = \<beta>'' Y_max"
+      by (auto simp: when_def Y_max_def)
+    also have "of_rat \<dots> = \<beta>' Y_max"
+      using \<beta>''[of Y_max] by auto
+    also have "\<dots> = (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f_max g))"
+      by (auto simp: \<beta>'_def \<open>tuples Y_max = {f_max}\<close>)
+    also have "\<dots> = (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g \<alpha>_max)"
+      by (intro prod.cong) (auto simp: f_max_def)
+    also have "\<dots> \<noteq> 0"
+      using \<open>0 \<notin> Roots\<close> \<open>\<alpha>_max \<in> X\<close> by (intro prod_nonzeroI) (metis PiE_mem)
+    finally show ?thesis by blast
+  qed
+
+  ultimately show False by blast
+qed
+
+lemma Hermite_Lindemann':
+  fixes \<beta> :: "complex \<Rightarrow> complex"
+  assumes [intro]: "finite X"
+  assumes alg1: "\<And>x. x \<in> X \<Longrightarrow> algebraic x"
+  assumes alg2: "\<And>x. x \<in> X \<Longrightarrow> algebraic (\<beta> x)"
+  assumes sum0: "(\<Sum>x\<in>X. \<beta> x * exp x) = 0"
+  shows   "\<forall>x\<in>X. \<beta> x = 0"
+proof -
+  have "{x\<in>X. \<beta> x \<noteq> 0} = {}"
+  proof (rule Hermite_Lindemann_aux4)
+    have "(\<Sum>x | x \<in> X \<and> \<beta> x \<noteq> 0. \<beta> x * exp x) = (\<Sum>x\<in>X. \<beta> x * exp x)"
+      by (intro sum.mono_neutral_left) auto
+    also have "\<dots> = 0"
+      by fact
+    finally show "(\<Sum>x | x \<in> X \<and> \<beta> x \<noteq> 0. \<beta> x * exp x) = 0" .
+  qed (use assms in auto)
+  thus ?thesis by blast
+qed
+
+theorem Hermite_Lindemann:
+  fixes \<alpha> \<beta> :: "'a \<Rightarrow> complex"
+  assumes [intro]: "finite I"
+  assumes alg1: "\<And>x. x \<in> I \<Longrightarrow> algebraic (\<alpha> x)"
+  assumes alg2: "\<And>x. x \<in> I \<Longrightarrow> algebraic (\<beta> x)"
+  assumes inj:  "inj_on \<alpha> I"
+  assumes sum0: "(\<Sum>x\<in>I. \<beta> x * exp (\<alpha> x)) = 0"
+  shows   "\<forall>x\<in>I. \<beta> x = 0"
+proof -
+  define f where "f = inv_into I \<alpha>"
+  have [simp]: "f (\<alpha> x) = x" if "x \<in> I" for x
+    using that by (auto simp: f_def inv_into_f_f[OF inj])
+  have "\<forall>x\<in>\<alpha>`I. (\<beta> \<circ> f) x = 0"
+  proof (rule Hermite_Lindemann')
+    have "0 = (\<Sum>x\<in>I. \<beta> x * exp (\<alpha> x))"
+      using sum0 ..
+    also have "\<dots> = (\<Sum>x\<in>I. (\<beta> \<circ> f) (\<alpha> x) * exp (\<alpha> x))"
+      by (intro sum.cong) auto
+    also have "\<dots> = (\<Sum>x\<in>\<alpha>`I. (\<beta> \<circ> f) x * exp x)"
+      using inj by (subst sum.reindex) auto
+    finally show "(\<Sum>x\<in>\<alpha> ` I. (\<beta> \<circ> f) x * exp x) = 0" ..
+  qed (use assms in auto)
+  thus ?thesis by auto
+qed
 
 corollary Hermite_Lindemann_list:
   fixes xs :: "(complex \<times> complex) list"
@@ -2844,30 +1966,79 @@ corollary Hermite_Lindemann_list:
   assumes distinct: "distinct (map snd xs)"
   assumes sum0: "(\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>) = 0"
   shows   "\<forall>c\<in>fst`set xs. c = 0"
-  sorry
+proof -
+  define n where "n = length xs"
+  have *: "\<forall>i\<in>{..<n}. fst (xs ! i) = 0"
+  proof (rule Hermite_Lindemann)
+    from distinct have "inj_on (\<lambda>i. map snd xs ! i) {..<n}"
+      by (intro inj_on_nth) (auto simp: n_def)
+    also have "?this \<longleftrightarrow> inj_on (\<lambda>i. snd (xs ! i)) {..<n}"
+      by (intro inj_on_cong) (auto simp: n_def)
+    finally show "inj_on (\<lambda>i. snd (xs ! i)) {..<n}" .
+  next
+    have "0 = (\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>)"
+      using sum0 ..
+    also have "\<dots> = (\<Sum>i<n. fst (xs ! i) * exp (snd (xs ! i)))"
+      unfolding sum_list_sum_nth
+      by (intro sum.cong) (auto simp: n_def case_prod_unfold)
+    finally show "\<dots> = 0" ..
+  next
+    fix i assume i: "i \<in> {..<n}"
+    hence "(fst (xs ! i), snd (xs ! i)) \<in> set xs"
+      by (auto simp: n_def)
+    with alg show "algebraic (fst (xs ! i))" "algebraic (snd (xs ! i))"
+      by blast+
+  qed auto
+
+  show ?thesis
+  proof (intro ballI, elim imageE)
+    fix c x assume cx: "c = fst x" "x \<in> set xs"
+    then obtain i where "i \<in> {..<n}" "x = xs ! i"
+      by (auto simp: set_conv_nth n_def)
+    with * cx show "c = 0" by blast
+  qed
+qed
 
 
-subsection \<open>Corollaries\<close>
+subsection \<open>Simple corollaries\<close>
 
-lemma algebraic_exp_complex_iff:
+corollary algebraic_exp_complex_iff:
   assumes "algebraic x"
   shows   "algebraic (exp x :: complex) \<longleftrightarrow> x = 0"
   using Hermite_Lindemann_list[of "[(1, x), (-exp x, 0)]"] assms by auto
 
-lemma complex_logarithm_of_algebraic_is_transcendental:
+corollary sum_of_exp_transcendentalI:
+  fixes xs :: "(complex \<times> complex) list"
+  assumes "\<forall>(x,y)\<in>set xs. algebraic x \<and> algebraic y \<and> y \<noteq> 0"
+  assumes "\<exists>x\<in>fst`set xs. x \<noteq> 0"
+  assumes distinct: "distinct (map snd xs)"
+  shows   "\<not>algebraic (\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>)"
+proof
+  define S where "S = (\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>)"
+  assume S: "algebraic S"
+  have "\<forall>c\<in>fst`set ((-S,0) # xs). c = 0"
+  proof (rule Hermite_Lindemann_list)
+    show "(\<Sum>(c, \<alpha>)\<leftarrow>(- S, 0) # xs. c * exp \<alpha>) = 0"
+      by (auto simp: S_def)
+  qed (use S assms in auto)
+  with assms(2) show False
+    by auto
+qed
+
+corollary transcendental_complex_logarithm:
   assumes "algebraic x" "exp y = (x :: complex)" "x \<noteq> 1"
   shows   "\<not>algebraic y"
   using algebraic_exp_complex_iff[of y] assms by auto
 
-lemma Ln_of_algebraic_is_transcendental:
+corollary transcendental_Ln:
   assumes "algebraic x" "x \<noteq> 0" "x \<noteq> 1"
   shows   "\<not>algebraic (Ln x)"
-  by (rule complex_logarithm_of_algebraic_is_transcendental) (use assms in auto)
+  by (rule transcendental_complex_logarithm) (use assms in auto)
 
-lemma exp_1_complex_transcendental: "\<not>algebraic (exp 1 :: complex)"
+corollary exp_1_complex_transcendental: "\<not>algebraic (exp 1 :: complex)"
   by (subst algebraic_exp_complex_iff) auto
 
-lemma pi_transcendental: "\<not>algebraic pi"
+corollary pi_transcendental: "\<not>algebraic pi"
 proof
   assume "algebraic pi"
   hence "algebraic (of_real pi)"
@@ -2879,6 +2050,201 @@ proof
   also have "exp (\<i> * of_real pi) = -1"
     by (rule exp_pi_i')
   finally show False by simp
+qed
+
+
+subsection \<open>Transcendence of the trigonometric and hyperbolic functions\<close>
+
+lemma transcendental_sinh:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (sinh z :: complex)"
+proof -
+  have "\<not>algebraic (\<Sum>(a,b)\<leftarrow>[(1/2, z), (-1/2, -z)]. a * exp b)"
+    using assms by (intro sum_of_exp_transcendentalI) auto
+  also have "(\<Sum>(a,b)\<leftarrow>[(1/2, z), (-1/2, -z)]. a * exp b) = sinh z"
+    by (simp add: sinh_def field_simps scaleR_conv_of_real)
+  finally show ?thesis .
+qed
+
+lemma transcendental_cosh:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (cosh z :: complex)"
+proof -
+  have "\<not>algebraic (\<Sum>(a,b)\<leftarrow>[(1/2, z), (1/2, -z)]. a * exp b)"
+    using assms by (intro sum_of_exp_transcendentalI) auto
+  also have "(\<Sum>(a,b)\<leftarrow>[(1/2, z), (1/2, -z)]. a * exp b) = cosh z"
+    by (simp add: cosh_def field_simps scaleR_conv_of_real)
+  finally show ?thesis .
+qed
+
+lemma transcendental_sin:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (sin z :: complex)"
+  unfolding sin_conv_sinh using transcendental_sinh[of "\<i> * z"] assms by simp
+
+lemma transcendental_cos:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (cos z :: complex)"
+  unfolding cos_conv_cosh using transcendental_cosh[of "\<i> * z"] assms by simp
+
+lemma tan_square_eq_neg1D:
+  assumes "tan (z :: complex) ^ 2 = -1"
+  shows "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))"
+proof -
+  from assms have "sin z ^ 2 = -(cos z ^ 2)" "cos z \<noteq> 0"
+    by (auto simp: tan_def divide_simps split: if_splits)
+  note this(1)
+  also have "cos z ^ 2 = 1 - sin z ^ 2"
+    by (simp add: cos_squared_eq)
+  finally have "1 - 2 * sin z ^ 2 = 0"
+    by simp
+  also have "1 - 2 * sin z ^ 2 = cos (2 * z)"
+    by (simp add: cos_double_sin)
+  finally have "cos (2 * z) = 0" .
+  then obtain n where "2 * z = complex_of_real (real_of_int n * pi) + complex_of_real pi / 2"
+    unfolding cos_eq_0 by blast
+  also have "\<dots> = (of_int n + 1/2) * pi"
+    by (simp add: ring_distribs)
+  finally have z: "z = (of_int n + 1/2) * pi / 2"
+    by (simp add: mult_ac)
+  thus "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))" ..
+qed
+
+lemma transcendental_tan:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (tan z :: complex)"
+proof
+  assume "algebraic (tan z)"
+
+  have nz1: "real_of_int n + 1 / 2 \<noteq> 0" for n
+  proof -
+    have "real_of_int (2 * n + 1) / real_of_int 2 \<notin> \<int>"
+      by (intro fraction_not_in_ints) auto
+    also have "real_of_int (2 * n + 1) / real_of_int 2 = real_of_int n + 1 / 2"
+      by simp
+    finally show "\<dots> \<noteq> 0"
+      by auto
+  qed
+
+  have ne_neg1: "tan z ^ 2 \<noteq> -1"
+  proof
+    assume "tan z ^ 2 = -1"
+    then obtain n where "z = of_real ((of_int n + 1 / 2) * pi / 2)"
+      using tan_square_eq_neg1D[of z] by blast
+    also have "algebraic \<dots> \<longleftrightarrow> algebraic ((real_of_int n + 1 / 2) * pi / 2)"
+      by (rule algebraic_of_real_iff)
+    also have  "\<not>algebraic ((real_of_int n + 1 / 2) * pi / 2)"
+      using nz1[of n] transcendental_pi by simp
+    finally show False using assms(1) by contradiction
+  qed
+  hence nz2: "1 + tan z ^ 2 \<noteq> 0"
+    by (subst add_eq_0_iff)
+
+  have nz3: "cos z \<noteq> 0"
+  proof
+    assume "cos z = 0"
+    then obtain n where "z = complex_of_real (real_of_int n * pi) + complex_of_real pi / 2"
+      by (subst (asm) cos_eq_0) blast
+    also have "\<dots> = complex_of_real ((real_of_int n + 1 / 2) * pi)"
+      by (simp add: ring_distribs)
+    also have "algebraic \<dots> \<longleftrightarrow> algebraic ((real_of_int n + 1 / 2) * pi)"
+      by (rule algebraic_of_real_iff)
+    also have "\<not>algebraic ((real_of_int n + 1 / 2) * pi)"
+      using nz1[of n] transcendental_pi by simp
+    finally show False using assms(1) by contradiction
+  qed
+
+  from nz3 have *: "sin z ^ 2 = tan z ^ 2 * cos z ^ 2"
+    by (simp add: tan_def field_simps)
+  also have "cos z ^ 2 = 1 - sin z ^ 2"
+    by (simp add: cos_squared_eq)
+  finally have "sin z ^ 2 * (1 + tan z ^ 2) = tan z ^ 2"
+    by (simp add: algebra_simps)
+  hence "sin z ^ 2 = tan z ^ 2 / (1 + tan z ^ 2)"
+    using nz2 by (simp add: field_simps)
+  also have "algebraic (tan z ^ 2 / (1 + tan z ^ 2))"
+    using \<open>algebraic (tan z)\<close> by auto
+  finally have "algebraic (sin z ^ 2)" .
+  hence "algebraic (sin z)"
+    by simp
+  thus False
+    using transcendental_sin[OF \<open>algebraic z\<close> \<open>z \<noteq> 0\<close>] by contradiction
+qed
+
+lemma transcendental_cot:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (cot z :: complex)"
+proof -
+  have "\<not>algebraic (tan z)"
+    by (rule transcendental_tan) fact+
+  also have "algebraic (tan z) \<longleftrightarrow> algebraic (inverse (tan z))"
+    by simp
+  also have "inverse (tan z) = cot z"
+    by (simp add: cot_def tan_def)
+  finally show ?thesis .
+qed
+
+lemma transcendental_tanh:
+  assumes "algebraic z" "z \<noteq> 0" "cosh z \<noteq> 0"
+  shows   "\<not>algebraic (tanh z :: complex)"
+  using transcendental_tan[of "\<i> * z"] assms unfolding tanh_conv_tan by simp
+
+lemma transcendental_Arcsin:
+  assumes "algebraic z" "z \<noteq> 0"
+  shows   "\<not>algebraic (Arcsin z)"
+proof -
+  have "\<i> * z + csqrt (1 - z\<^sup>2) \<noteq> 0"
+    using Arcsin_body_lemma by blast
+  moreover have "\<i> * z + csqrt (1 - z\<^sup>2) \<noteq> 1"
+  proof
+    assume "\<i> * z + csqrt (1 - z\<^sup>2) = 1"
+    hence "Arcsin z = 0"
+      by (simp add: Arcsin_def)
+    hence "sin (Arcsin z) = 0"
+      by (simp only: sin_zero)
+    also have "sin (Arcsin z) = z"
+      by simp
+    finally show False using \<open>z \<noteq> 0\<close> by simp
+  qed
+  ultimately have "\<not> algebraic (Ln (\<i> * z + csqrt (1 - z\<^sup>2)))"
+    using assms by (intro transcendental_Ln) auto
+  thus ?thesis
+    by (simp add: Arcsin_def)
+qed
+
+lemma transcendental_Arccos:
+  assumes "algebraic z" "z \<noteq> 1"
+  shows   "\<not>algebraic (Arccos z)"
+proof -
+  have "z + \<i> * csqrt (1 - z\<^sup>2) \<noteq> 0"
+    using Arccos_body_lemma by blast
+  moreover have "z + \<i> * csqrt (1 - z\<^sup>2) \<noteq> 1"
+  proof
+    assume "z + \<i> * csqrt (1 - z\<^sup>2) = 1"
+    hence "Arccos z = 0"
+      by (simp add: Arccos_def)
+    hence "cos (Arccos z) = 1"
+      by (simp only: cos_zero)
+    also have "cos (Arccos z) = z"
+      by simp
+    finally show False using \<open>z \<noteq> 1\<close> by simp
+  qed
+  ultimately have "\<not> algebraic (Ln (z + \<i> * csqrt (1 - z\<^sup>2)))"
+    using assms by (intro transcendental_Ln) auto
+  thus ?thesis
+    by (simp add: Arccos_def)
+qed
+
+lemma transcendental_Arctan:
+  assumes "algebraic z" "z \<notin> {0, \<i>, -\<i>}"
+  shows   "\<not>algebraic (Arctan z)"
+proof -
+  have "\<i> * z \<noteq> 1" "1 + \<i> * z \<noteq> 0"
+    using assms(2) by (auto simp: complex_eq_iff)
+  hence "\<not> algebraic (Ln ((1 - \<i> * z) / (1 + \<i> * z)))"
+    using assms by (intro transcendental_Ln) auto
+  thus ?thesis
+    by (simp add: Arctan_def)
 qed
 
 end

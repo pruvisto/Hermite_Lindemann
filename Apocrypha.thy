@@ -1,3 +1,102 @@
+lemma tan_square_eq_1D:
+  assumes "tan (z :: complex) ^ 2 = 1"
+  shows "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))"
+proof -
+  from assms have "sin z ^ 2 = cos z ^ 2" "cos z \<noteq> 0"
+    by (auto simp: tan_def field_simps)
+  note this(1)
+  also have "cos z ^ 2 = 1 - sin z ^ 2"
+    by (simp add: cos_squared_eq)
+  finally have "1 - 2 * sin z ^ 2 = 0"
+    by simp
+  also have "1 - 2 * sin z ^ 2 = cos (2 * z)"
+    by (simp add: cos_double_sin)
+  finally have "cos (2 * z) = 0" .
+  then obtain n where "2 * z = complex_of_real (real_of_int n * pi) + complex_of_real pi / 2"
+    unfolding cos_eq_0 by blast
+  also have "\<dots> = (of_int n + 1/2) * pi"
+    by (simp add: ring_distribs)
+  finally have z: "z = (of_int n + 1/2) * pi / 2"
+    by (simp add: mult_ac)
+  thus "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))" ..
+qed
+
+lemma tan_eq_1_iff: "tan (z :: complex) = 1 \<longleftrightarrow> (\<exists>n. z = (of_int n + 1 / 4) * of_real pi)"
+proof
+  assume "\<exists>n. z = (of_int n + 1 / 4) * of_real pi"
+  then obtain n where n: "z = (of_int n + 1 / 4) * of_real pi"
+    by auto
+  have "z = of_real ((real_of_int n + 1/4) * pi)"
+    by (simp add: n)
+  also have "tan \<dots> = of_real (tan ((real_of_int n + 1/4) * pi))"
+    by (subst tan_of_real) auto
+  also have "(real_of_int n + 1/4) * pi = pi / 4 + real_of_int n * pi"
+    by (simp add: algebra_simps)
+  also have "tan \<dots> = tan (pi / 4)"
+    by (rule tan_periodic_int)
+  also have "\<dots> = 1"
+    by (simp add: tan_45)
+  finally show "tan z = 1"
+    by simp
+next
+  assume "tan z = 1"
+  then obtain n where z: "z = (of_int n + 1/2) * pi / 2"
+    using tan_square_eq_1D[of z] by auto
+  define z' where "z' = (real_of_int n + 1/2) * pi / 2"
+  have z': "z = of_real z'"
+    by (simp add: z z'_def)
+
+  have "even n"
+  proof (rule ccontr)
+    assume "odd n"
+    then obtain k where k: "n = 2 * k + 1"
+      by (elim oddE)
+    have "tan z = of_real (tan z')"
+      by (simp add: z' tan_of_real)
+    also have "tan z' = tan (z' - (k + 1) * pi)"
+      using tan_periodic_int[of z' "-(k + 1)"] by (simp add: algebra_simps)
+    also have "z' - (k + 1) * pi = -pi / 4"
+      by (simp add: z'_def field_simps k)
+    also have "tan \<dots> = -1"
+      by (simp add: tan_45)
+    finally show False using \<open>tan z = 1\<close>
+      by simp
+  qed
+  then obtain k where k: "n = 2 * k"
+    by (elim evenE)
+  have "z = (of_int k + 1 / 4) * of_real pi"
+    by (simp add: k z)
+  thus "\<exists>n. z = (of_int n + 1 / 4) * of_real pi" ..
+qed
+
+lemma tan_eq_neg1_iff: "tan (z :: complex) = -1 \<longleftrightarrow> (\<exists>n. z = (of_int n - 1 / 4) * of_real pi)"
+proof
+  assume "\<exists>n. z = (of_int n - 1 / 4) * of_real pi"
+  then obtain n where n: "z = (of_int n - 1 / 4) * of_real pi"
+    by auto
+  have "z = of_real ((real_of_int n - 1/4) * pi)"
+    by (simp add: n)
+  also have "tan \<dots> = of_real (tan ((real_of_int n - 1/4) * pi))"
+    by (subst tan_of_real) auto
+  also have "(real_of_int n - 1/4) * pi = -pi / 4 + real_of_int n * pi"
+    by (simp add: algebra_simps)
+  also have "tan \<dots> = tan (-pi / 4)"
+    by (rule tan_periodic_int)
+  also have "\<dots> = -1"
+    by (simp add: tan_45)
+  finally show "tan z = -1"
+    by simp
+next
+  assume "tan z = -1"
+  hence "tan (-z) = 1"
+    by simp
+  then obtain n where n: "-z = (of_int n + 1 / 4) * of_real pi"
+    by (subst (asm) tan_eq_1_iff) blast
+  hence "z = (of_int (-n) - 1 / 4) * of_real pi"
+    unfolding of_int_minus by (subst (asm) minus_equation_iff) (simp add: algebra_simps)
+  thus "\<exists>n. z = (of_int n - 1 / 4) * of_real pi" ..
+qed
+
 lift_definition poly_roots :: "'a :: idom poly \<Rightarrow> 'a multiset" is
   "\<lambda>p x. if p = 0 then 0 else order x p"
 proof -
