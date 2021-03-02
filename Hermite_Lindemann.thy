@@ -24,6 +24,7 @@ text \<open>
   and pairwise coprime polynomials. Let $\beta_1, \ldots, \beta_m$ be non-zero integers. Then
   \[\sum_{i=1}^m \beta_i \sum_{q_i(\alpha) = 0} e^\alpha \neq 0\]
 \<close>
+
 lemma Hermite_Lindemann_aux1:
   fixes P :: "int poly set" and \<beta> :: "int poly \<Rightarrow> int"
   assumes "finite P" and "P \<noteq> {}"

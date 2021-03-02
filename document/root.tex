@@ -11,12 +11,29 @@
 
 \begin{document}
 
-\title{The Hermite--Lindemann-Weierstraß Transcendence Theorem}
+\title{The Hermite--Lindemann--Weierstraß Transcendence Theorem}
 \author{Manuel Eberl}
 \maketitle
 
 \begin{abstract}
+This article provides a formalisation of the Hermite--Lindemann--Weierstraß Theorem
+(also known as simply Hermite--Lindemann or Lindemann--Weierstraß). This theorem is one of the
+crowning achievements of 19 century number theory.
 
+The theorem states that, for any algebraic numbers $\beta_1, \ldots, \beta_n\in\mathbb{C}$ and
+distinct algebraic numbers $\alpha_i, \ldots, \alpha_n\in\mathbb{C}$, we have:
+\[\beta_1 e^{\alpha_1} + \ldots + \beta_n e^{\alpha_n} = 0 \quad\quad\text{iff}\quad\quad
+  \forall i.\ \beta_i = 0\]
+
+This has a number of direct corollaries, e.g.:
+\begin{itemize}
+\item $e$ and $\pi$ are transcendental
+\item $e^x$, $\sin x$, $\cos x$, etc.\ are transcendental for non-zero algebraic $x$
+\item $\ln x$ is transcendental for $x\notin\{0, 1\}$
+\end{itemize}
+
+Like the previous formalisation in Coq by Bernard~\cite{bernard}, I formalised Baker's version
+of the theorem and proof~\cite{baker}.
 \end{abstract}
 
 \newpage
