@@ -1,3 +1,7 @@
+(*
+  File:     Misc_HLW.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>Miscellaneous facts\<close>
 theory Misc_HLW
 imports

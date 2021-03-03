@@ -1,7 +1,17 @@
+(*
+  File:     Complex_Lexorder.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>The lexicographic ordering on complex numbers\<close>
 theory Complex_Lexorder
   imports Complex_Main "HOL-Library.Multiset"
 begin
+
+text \<open>
+  We define a lexicographic order on the complex numbers, comparing first the real parts
+  and, if they are equal, the imaginary parts. This ordering is of course not compatible with
+  multiplication, but it is compatible with addition.
+\<close>
 
 definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
   "less_eq_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x \<le> Im y"
@@ -9,23 +19,17 @@ definition less_eq_complex_lex (infix "\<le>\<^sub>\<complex>" 50)  where
 definition less_complex_lex (infix "<\<^sub>\<complex>" 50) where
   "less_complex_lex x y \<longleftrightarrow> Re x < Re y \<or> Re x = Re y \<and> Im x < Im y"
 
-interpretation complex_lex: linorder less_eq_complex_lex less_complex_lex
+interpretation complex_lex:
+  linordered_ab_group_add "(+)" 0 "(-)" "uminus" less_eq_complex_lex less_complex_lex
   by standard (auto simp: less_eq_complex_lex_def less_complex_lex_def complex_eq_iff)
 
 lemmas [trans] =
   complex_lex.order.trans complex_lex.less_le_trans
   complex_lex.less_trans complex_lex.le_less_trans
 
-lemma add_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c \<le>\<^sub>\<complex> d \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + d"
-  and add_right_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> a + c \<le>\<^sub>\<complex> b + c"
-  and add_left_mono_complex_lex: "a \<le>\<^sub>\<complex> b \<Longrightarrow> c + a \<le>\<^sub>\<complex> c + b"
-  and add_strict_right_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> a + c <\<^sub>\<complex> b + c"
-  and add_strict_left_mono_complex_lex: "a <\<^sub>\<complex> b \<Longrightarrow> c + a <\<^sub>\<complex> c + b"
-  by (auto simp: less_eq_complex_lex_def less_complex_lex_def)
-
 lemma (in ordered_comm_monoid_add) sum_mono_complex_lex:
   "(\<And>i. i\<in>K \<Longrightarrow> f i \<le>\<^sub>\<complex> g i) \<Longrightarrow> (\<Sum>i\<in>K. f i) \<le>\<^sub>\<complex> (\<Sum>i\<in>K. g i)"
-  by (induct K rule: infinite_finite_induct) (use add_mono_complex_lex in auto)
+  by (induct K rule: infinite_finite_induct) (use complex_lex.add_mono in auto)
 
 lemma sum_strict_mono_ex1_complex_lex:
   fixes f g :: "'i \<Rightarrow> complex"
@@ -40,9 +44,9 @@ proof-
   also have "\<dots> = sum f (A - {a}) + sum f {a}"
     using \<open>finite A\<close> by (subst sum.union_disjoint) auto
   also have "\<dots> \<le>\<^sub>\<complex> sum g (A - {a}) + sum f {a}"
-    by (intro add_mono_complex_lex sum_mono_complex_lex) (simp_all add: assms)
+    by (intro complex_lex.add_mono sum_mono_complex_lex) (simp_all add: assms)
   also have "\<dots> <\<^sub>\<complex> sum g (A - {a}) + sum g {a}"
-    using a by (intro add_strict_left_mono_complex_lex) auto
+    using a by (intro complex_lex.add_strict_left_mono) auto
   also have "\<dots> = sum g ((A - {a}) \<union> {a})"
     using \<open>finite A\<close> by (subst sum.union_disjoint[symmetric]) auto
   also have "\<dots> = sum g A" by (simp add: insert_absorb[OF \<open>a \<in> A\<close>])
@@ -53,7 +57,7 @@ qed
 lemma sum_list_mono_complex_lex:
   assumes "list_all2 (\<le>\<^sub>\<complex>) xs ys"
   shows   "sum_list xs \<le>\<^sub>\<complex> sum_list ys"
-  using assms by induction (auto intro: add_mono_complex_lex)
+  using assms by induction (auto intro: complex_lex.add_mono)
 
 lemma sum_mset_mono_complex_lex:
   assumes "rel_mset (\<le>\<^sub>\<complex>) A B"

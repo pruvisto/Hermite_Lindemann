@@ -1,3 +1,7 @@
+(*
+  File:     More_Multivariate_Polynomial_HLW.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>Additional facts about multivariate polynomials\<close>
 theory More_Multivariate_Polynomial_HLW
   imports "Power_Sum_Polynomials.Power_Sum_Polynomials_Library"
@@ -7,12 +11,6 @@ subsection \<open>Miscellaneous\<close>
 
 lemma Var_altdef: "Var i = monom (Poly_Mapping.single i 1) 1"
   by transfer' (simp add: Var\<^sub>0_def)
-
-lemma Const_0 [simp]: "Const 0 = 0"
-  by transfer (auto simp: Const\<^sub>0_def)
-
-lemma Const_1 [simp]: "Const 1 = 1"
-  by transfer (auto simp: Const\<^sub>0_def)
 
 lemma Const_conv_monom: "Const c = monom 0 c"
   by transfer' (auto simp: Const\<^sub>0_def)

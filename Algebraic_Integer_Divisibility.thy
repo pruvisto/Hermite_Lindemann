@@ -1,7 +1,19 @@
+(*
+  File:     Algebraic_Integer_Divisibility.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>Divisibility of algebraic integers\<close>
 theory Algebraic_Integer_Divisibility
   imports "Algebraic_Numbers.Algebraic_Numbers"
 begin
+
+text \<open>
+  In this section, we define a notion of divisibility of algebraic integers: \<open>y\<close> is divisible
+  by \<open>x\<close> if \<open>y / x\<close> is an algebraic integer (or if \<open>x\<close> and \<open>y\<close> are both zero).
+
+  Technically, the definition does not require \<open>x\<close> and \<open>y\<close> to be algebraic integers themselves,
+  but we will always use it that way (in fact, in our case \<open>x\<close> will always be a rational integer).
+\<close>
 
 definition alg_dvd :: "'a :: field \<Rightarrow> 'a \<Rightarrow> bool" (infix "alg'_dvd" 50) where
   "x alg_dvd y \<longleftrightarrow> (x = 0 \<longrightarrow> y = 0) \<and> algebraic_int (y / x)"
@@ -118,6 +130,10 @@ lemma alg_dvd_mult2 [simp]:
   shows "a alg_dvd b \<Longrightarrow> algebraic_int c \<Longrightarrow> a alg_dvd (b * c)"
   using alg_dvd_mult[of a b c] by (simp add: mult.commute)
 
+text \<open>
+  A crucial theorem: if an integer \<open>x\<close> divides a rational number \<open>y\<close>, then \<open>y\<close> is in fact
+  also an integer, and that integer is a multiple of \<open>x\<close>.
+\<close>
 lemma alg_dvd_int_rat:
   fixes y :: "'a :: field_char_0"
   assumes "of_int x alg_dvd y" and "y \<in> \<rat>"

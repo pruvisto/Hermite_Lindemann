@@ -1,9 +1,15 @@
+(*
+  File:     More_Algebraic_Numbers_HLW.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>More facts about algebraic numbers\<close>
 theory More_Algebraic_Numbers_HLW
   imports "Algebraic_Numbers.Algebraic_Numbers"
 begin
 
 subsection \<open>Miscellaneous\<close>
+
+(* TODO: Move! All of this belongs in Algebraic_Numbers *)
 
 lemma in_Ints_imp_algebraic [simp, intro]: "x \<in> \<int> \<Longrightarrow> algebraic x"
   by (intro algebraic_int_imp_algebraic int_imp_algebraic_int)
@@ -130,7 +136,12 @@ proof -
   thus ?thesis by (simp add: field_simps)
 qed
 
+
 subsection \<open>Turning an algebraic number into an algebraic integer\<close>
+
+subsection \<open>
+  Multiplying an algebraic number with a suitable integer turns it into an algebraic integer.
+\<close>
 
 lemma algebraic_imp_algebraic_int:
   fixes x :: "'a :: field_char_0"

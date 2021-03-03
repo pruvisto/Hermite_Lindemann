@@ -4,6 +4,7 @@
 
 % this should be the last package used
 \usepackage{pdfsetup}
+\usepackage[shortcuts]{extdash}
 
 % urls in roman style, theory text in math-similar italics
 \urlstyle{rm}
@@ -16,9 +17,9 @@
 \maketitle
 
 \begin{abstract}
-This article provides a formalisation of the Hermite--Lindemann--Weierstraß Theorem
-(also known as simply Hermite--Lindemann or Lindemann--Weierstraß). This theorem is one of the
-crowning achievements of 19 century number theory.
+This article provides a formalisation of the Her\-mite\--Lin\-de\-mann\--Wei\-er\-straß Theorem
+(also known as simply Her\-mite\--Lin\-de\-mann or Lin\-de\-mann\--Wei\-er\-straß). This theorem is one of the
+crowning achievements of 19th century number theory.
 
 The theorem states that, for any algebraic numbers $\beta_1, \ldots, \beta_n\in\mathbb{C}$ and
 distinct algebraic numbers $\alpha_i, \ldots, \alpha_n\in\mathbb{C}$, we have:
@@ -28,8 +29,8 @@ distinct algebraic numbers $\alpha_i, \ldots, \alpha_n\in\mathbb{C}$, we have:
 This has a number of direct corollaries, e.g.:
 \begin{itemize}
 \item $e$ and $\pi$ are transcendental
-\item $e^x$, $\sin x$, $\cos x$, etc.\ are transcendental for non-zero algebraic $x$
-\item $\ln x$ is transcendental for $x\notin\{0, 1\}$
+\item $e^z$, $\sin z$, $\tan z$, etc.\ are transcendental for algebraic $z\in\mathbb{C}\setminus\{0\}$
+\item $\ln z$ is transcendental for algebraic $z\in\mathbb{C}\setminus\{0, 1\}$
 \end{itemize}
 
 Like the previous formalisation in Coq by Bernard~\cite{bernard}, I formalised Baker's version

@@ -7,13 +7,13 @@ theory Hermite_Lindemann
 imports 
   Pi_Transcendental.Pi_Transcendental
   Algebraic_Numbers.Algebraic_Numbers
+  Algebraic_Integer_Divisibility
   Min_Int_Poly
   Complex_Lexorder
   More_Polynomial_HLW
   More_Multivariate_Polynomial_HLW
   More_Algebraic_Numbers_HLW
   Misc_HLW
-  Algebraic_Integer_Divisibility
 begin
 
 subsection \<open>Main proof\<close>
@@ -23,6 +23,19 @@ text \<open>
   Let $m > 0$ and $q_1, \ldots, q_m \in\mathbb{Z}[X]$ be irreducible, non-constant,
   and pairwise coprime polynomials. Let $\beta_1, \ldots, \beta_m$ be non-zero integers. Then
   \[\sum_{i=1}^m \beta_i \sum_{q_i(\alpha) = 0} e^\alpha \neq 0\]
+
+  The difference to the final theorem is that
+
+    \<^enum> The coefficients $\beta_i$ are non-zero integers (as opposed to arbitrary algebraic numbers)
+
+    \<^enum> The exponents $\alpha_i$ occur in full sets of conjugates, and each set has the same
+      coefficient.
+
+  In a similar fashion to the proofs of the transcendence of \<open>e\<close> and \<open>\<pi>\<close>, we define some number
+  $J$ depending on the $\alpha_i$ and $\beta_i$ and an arbitrary sufficiently large prime \<open>p\<close>. We
+  then show that, on one hand, $J$ is an integer multiple of $(p-1)!$, but on the other hand it
+  is bounded from above by a term of the form $C_1 \cdot C_2^p$. This is then clearly a
+  contradiction if \<open>p\<close> is chosen large enough.
 \<close>
 
 lemma Hermite_Lindemann_aux1:
@@ -176,6 +189,9 @@ proof
   define C' where
     "C' = (\<Prod>x\<in>Roots'. \<Sum>q\<in>P. real_of_int \<bar>\<beta> q\<bar> * (\<Sum>\<alpha>\<in>Roots q. cmod \<alpha> * exp (cmod \<alpha>)))"
 
+  text \<open>
+    We commence with the proof of the main inequality.
+  \<close>
   have ineq: "fact (p - 1) ^ n \<le> C' * C p ^ n"
     if p: "prime p" 
     and p_ineqs: "\<forall>q\<in>P. p > \<bar>\<beta> q\<bar>"
@@ -185,6 +201,11 @@ proof
     have "p > 1"
       using prime_gt_1_nat[OF p] .
 
+    text \<open>
+      We define the polynomial function
+        \[f_i(X) = l^{np} \frac{\prod_\alpha (X-\alpha)^p}{X - \alpha_i}\]
+      where the product runs over all roots $\alpha$.
+    \<close>
     define f_poly :: "complex \<Rightarrow> complex poly" where
       "f_poly = (\<lambda>\<alpha>. Polynomial.smult (l^(n*p)) ((\<Prod>\<alpha>'\<in>Roots'. [:-\<alpha>', 1:]^p) div [:-\<alpha>, 1:]))"
     have f_poly_altdef: "f_poly \<alpha> = Polynomial.smult (l^(n*p))
@@ -219,14 +240,24 @@ proof
         using \<open>n > 0\<close> \<open>p > 1\<close> by (cases n) auto
       finally show ?thesis .
     qed
-    
+
+    text \<open>
+      Next, we define the function $I_i(z) = \int_0^z e^{z-t} f_i(t) \text{d}t$, and,
+      based on that, the numbers $J_i = \sum_{i=1}^m \beta_i \sum_{q_i(x) = 0} I_i(x)$,
+      and the number $J$, which is the product of all the $J_i$:
+    \<close>
     define I :: "complex \<Rightarrow> complex \<Rightarrow> complex"
       where "I = (\<lambda>\<alpha> x. lindemann_weierstrass_aux.I (f_poly \<alpha>) x)"
     define J :: "complex \<Rightarrow> complex"
       where "J = (\<lambda>\<alpha>. \<Sum>q\<in>P. \<beta> q * (\<Sum>x\<in>Roots q. I \<alpha> x))"
+
     define J' :: complex
       where "J' = (\<Prod>\<alpha>\<in>Roots'. J \<alpha>)"
-  
+
+    text \<open>
+      Reusing some of the machinery from the proof that \<open>e\<close> is transcendental,
+      we find the following equality for $J_i$:
+    \<close>
     have J_eq: "J \<alpha> = -(\<Sum>q\<in>P. of_int (\<beta> q) * (\<Sum>x\<in>Roots q. \<Sum>j<n*p. poly ((pderiv ^^ j) (f_poly \<alpha>)) x))"
       if "\<alpha> \<in> Roots'" for \<alpha>
     proof -
@@ -244,7 +275,14 @@ proof
         unfolding sum_distrib_right [symmetric] mult.assoc [symmetric] sum_eq_0 by simp
       finally show ?thesis .
     qed
-  
+
+    text \<open>
+      The next big step is to show that $(p-1)! \mid J_i$ as an algebraic integer (i.e.
+      $J_i / (p-1)!$ is an algebraic integer), but $p \not\mid J_i$. This is done by brute force:
+      We show that every summand in the above sum has $p!$ as a factor, except for
+      the one corresponding to $x = \alpha_i$, $j = p - 1$, which has $(p-1)!$ as a factor but
+      not \<open>p\<close>.
+    \<close>
     have J: "fact (p - 1) alg_dvd J \<alpha>" "\<not>of_nat p alg_dvd J \<alpha>" if \<alpha>: "\<alpha> \<in> Roots'" for \<alpha>
     proof -
       define h where "h = (\<lambda>\<alpha>' j. poly ((pderiv ^^ j) (f_poly \<alpha>)) \<alpha>')"
@@ -595,6 +633,11 @@ proof
       qed (use \<open>\<not>of_nat p alg_dvd of_int (\<beta> q) * h \<alpha> (p-1)\<close> in auto)
     qed
 
+    text \<open>
+      Our next goal is to show that $J$ is rational. This is done by repeated applications
+      of the fundamental theorem of symmetric polynomials, exploiting the fact that $J$ is
+      symmetric in all the $\alpha_i$ for each set of conjugates.
+    \<close>
     define g :: "int poly poly"
       where "g = synthetic_div (map_poly (\<lambda>x. [:x:])
                    ((Polynomial.smult lc_factor (\<Prod>P)) ^ p)) [:0, 1:]"
@@ -777,6 +820,10 @@ proof
         by (intro prod.UNION_disjoint [symmetric]) (auto simp: disjoint_family_on_def)
       finally show "J' \<in> \<rat>" .
     qed
+
+    text \<open>
+      Since \<open>J'\<close> is clearly an algebraic integer, we now know that it is in fact an integer.
+    \<close>
     moreover have "algebraic_int J'"
       unfolding J'_def 
     proof (intro algebraic_int_prod)
@@ -788,7 +835,10 @@ proof
     qed
     ultimately have "J' \<in> \<int>"
       using rational_algebraic_int_is_int by blast
-  
+
+    text \<open>
+      It is also non-zero, as none of the $J_i$ have $p$ as a factor and such cannot be zero.
+    \<close>
     have "J' \<noteq> 0"
       unfolding J'_def
     proof (intro prod_nonzeroI)
@@ -798,7 +848,10 @@ proof
       thus "J \<alpha> \<noteq> 0"
         by auto
     qed
-  
+
+    text \<open>
+      It then clearly follows that $(p-1)!^n \leq J$:
+    \<close>
     have "fact (p - 1) ^ n alg_dvd J'"
     proof -
       have "fact (p - 1) ^ n = (\<Prod>\<alpha>\<in>Roots'. fact (p - 1))"
@@ -831,7 +884,8 @@ proof
       finally show ?thesis
         by simp
     qed
-  
+
+    text \<open>The standard M-L bound for $I_i(x)$ shows the following inequality:\<close>
     also have "norm J' \<le> C' * C p ^ n"
     proof -
       have "norm J' = (\<Prod>x\<in>Roots'. norm (J x))"
@@ -890,7 +944,8 @@ proof
         by (simp add: C'_def power_mult_distrib n_altdef flip: sum_distrib_right mult.assoc)
       finally show ?thesis .
     qed
-  
+
+    text \<open>And with that, we have our inequality:\<close>
     finally show "fact (p - 1) ^ n \<le> C' * C p ^ n" .
   qed
 
@@ -985,6 +1040,10 @@ qed
 
 subsection \<open>Removing the restriction of full sets of conjugates\<close>
 
+text \<open>
+  We will now remove the restriction that the $\alpha_i$ must occur in full sets of conjugates
+  by multiplying the equality with all permutations of roots.
+\<close>
 lemma Hermite_Lindemann_aux2:
   fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> int"
   assumes "finite X"
@@ -996,45 +1055,15 @@ proof (rule ccontr)
   assume "X \<noteq> {}"
   note [intro] = \<open>finite X\<close>
 
+  text \<open>
+    Let \<open>P\<close> be the smallest integer polynomial whose roots are a superset of \<open>X\<close>:
+  \<close>
   define P :: "int poly" where "P = \<Prod>(min_int_poly ` X)"
   define Roots :: "complex set" where "Roots = {x. ipoly P x = 0}"
   have [simp]: "P \<noteq> 0"
     using \<open>finite X\<close> by (auto simp: P_def)
   have [intro]: "finite Roots"
     unfolding Roots_def by (intro poly_roots_finite) auto
-
-  define n where "n = card Roots"
-  obtain Root where Root: "bij_betw Root {..<n} Roots"
-    using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
-  define unRoot :: "complex \<Rightarrow> nat" where "unRoot = inv_into {..<n} Root"
-  have unRoot: "bij_betw unRoot Roots {..<n}"
-    unfolding unRoot_def by (intro bij_betw_inv_into Root)
-  have unRoot_Root [simp]: "unRoot (Root i) = i" if "i < n" for i
-    unfolding unRoot_def using Root that by (subst inv_into_f_f) (auto simp: bij_betw_def)
-  have Root_unRoot [simp]: "Root (unRoot x) = x" if "x \<in> Roots" for x
-    unfolding unRoot_def using Root that by (subst f_inv_into_f) (auto simp: bij_betw_def)
-  have [simp, intro]: "Root i \<in> Roots" if "i < n" for i
-    using Root that by (auto simp: bij_betw_def)
-  have [simp, intro]: "unRoot x < n" if "x \<in> Roots" for x
-    using unRoot that by (auto simp: bij_betw_def)
-
-  define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
-    "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
-  have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
-    using bij_betw_permutations[OF Root] unfolding convert_perm_def unRoot_def .
-  have permutes_convert_perm [intro]: "convert_perm \<sigma> permutes Roots" if "\<sigma> permutes {..<n}" for \<sigma>
-    using that bij_convert unfolding bij_betw_def by blast
-  have convert_perm_compose: "convert_perm (\<pi> \<circ> \<sigma>) = convert_perm \<pi> \<circ> convert_perm \<sigma>"
-    if "\<pi> permutes {..<n}" "\<sigma> permutes {..<n}" for \<sigma> \<pi>
-  proof (intro ext)
-    fix x show "convert_perm (\<pi> \<circ> \<sigma>) x = (convert_perm \<pi> \<circ> convert_perm \<sigma>) x"
-    proof (cases "x \<in> Roots")
-      case True
-      thus ?thesis
-        using permutes_in_image[OF that(2), of "unRoot x"]
-        by (auto simp: convert_perm_def bij_betw_def)
-    qed (auto simp: convert_perm_def)
-  qed
 
   have "X \<subseteq> Roots"
   proof safe
@@ -1058,18 +1087,72 @@ proof (rule ccontr)
       by (intro coprime_of_int_polyI[OF primes_coprime]) auto
   qed
 
+  text \<open>
+    Since we will need a numbering of these roots, we obtain one:
+  \<close>
+  define n where "n = card Roots"
+  obtain Root where Root: "bij_betw Root {..<n} Roots"
+    using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
+  define unRoot :: "complex \<Rightarrow> nat" where "unRoot = inv_into {..<n} Root"
+  have unRoot: "bij_betw unRoot Roots {..<n}"
+    unfolding unRoot_def by (intro bij_betw_inv_into Root)
+  have unRoot_Root [simp]: "unRoot (Root i) = i" if "i < n" for i
+    unfolding unRoot_def using Root that by (subst inv_into_f_f) (auto simp: bij_betw_def)
+  have Root_unRoot [simp]: "Root (unRoot x) = x" if "x \<in> Roots" for x
+    unfolding unRoot_def using Root that by (subst f_inv_into_f) (auto simp: bij_betw_def)
+  have [simp, intro]: "Root i \<in> Roots" if "i < n" for i
+    using Root that by (auto simp: bij_betw_def)
+  have [simp, intro]: "unRoot x < n" if "x \<in> Roots" for x
+    using unRoot that by (auto simp: bij_betw_def)
+
+  text \<open>
+    We will also need to convert between permutations of natural numbers less than \<open>n\<close> and
+    permutations of the roots:
+  \<close>
+  define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
+    "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
+  have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
+    using bij_betw_permutations[OF Root] unfolding convert_perm_def unRoot_def .
+  have permutes_convert_perm [intro]: "convert_perm \<sigma> permutes Roots" if "\<sigma> permutes {..<n}" for \<sigma>
+    using that bij_convert unfolding bij_betw_def by blast
+  have convert_perm_compose: "convert_perm (\<pi> \<circ> \<sigma>) = convert_perm \<pi> \<circ> convert_perm \<sigma>"
+    if "\<pi> permutes {..<n}" "\<sigma> permutes {..<n}" for \<sigma> \<pi>
+  proof (intro ext)
+    fix x show "convert_perm (\<pi> \<circ> \<sigma>) x = (convert_perm \<pi> \<circ> convert_perm \<sigma>) x"
+    proof (cases "x \<in> Roots")
+      case True
+      thus ?thesis
+        using permutes_in_image[OF that(2), of "unRoot x"]
+        by (auto simp: convert_perm_def bij_betw_def)
+    qed (auto simp: convert_perm_def)
+  qed
+
+  text \<open>
+    We extend the coefficient vector to the new roots by setting their coefficients to 0:
+  \<close>
   define \<beta>' where "\<beta>' = (\<lambda>x. if x \<in> X then \<beta> x else 0)"
 
+  text \<open>
+    We now define the set of all permutations of our roots:
+  \<close>
   define perms where "perms = {\<pi>. \<pi> permutes Roots}"
   have [intro]: "finite perms"
     unfolding perms_def by (rule finite_permutations) auto
-
   have [simp]: "card perms = fact n"
     unfolding perms_def n_def by (intro card_permutations) auto
+
+  text \<open>
+    The following is the set of all \<open>n!\<close>-tuples of roots, disregarding permutation of components.
+    In other words: all multisets of roots with size \<open>n!\<close>.
+  \<close>
   define Roots_ms :: "complex multiset set" where
     "Roots_ms = {X. set_mset X \<subseteq> Roots \<and> size X = fact n}"
   have [intro]: "finite Roots_ms"
     unfolding Roots_ms_def by (rule finite_multisets_of_size) auto
+
+  text \<open>
+    Next, the following is the set of \<open>n!\<close>-tuples whose entries are precisely the multiset \<open>X\<close>:
+  \<close>
   define tuples :: "complex multiset \<Rightarrow> ((complex \<Rightarrow> complex) \<Rightarrow> complex) set" where
     "tuples = (\<lambda>X. {f\<in>perms \<rightarrow>\<^sub>E Roots. image_mset f (mset_set perms) = X})"
   have fin_tuples [intro]: "finite (tuples X)" for X
@@ -1077,7 +1160,11 @@ proof (rule ccontr)
   define tuples' :: "(complex multiset \<times> ((complex \<Rightarrow> complex) \<Rightarrow> complex)) set" where
     "tuples' = (SIGMA X:Roots_ms. tuples X)"
 
-  have bij_convert': "bij_betw (\<lambda>f. f \<circ> (\<circ>) \<sigma>) (tuples X) (tuples X)"
+  text \<open>
+    The following shows that our \<^term>\<open>tuples\<close> definition is stable under permutation of
+    the roots.
+  \<close>
+  have bij_convert': "bij_betw (\<lambda>f. f \<circ> (\<lambda>g. \<sigma> \<circ> g)) (tuples X) (tuples X)"
     if \<sigma>: "\<sigma> permutes Roots" for \<sigma> X
   proof (rule bij_betwI)
     have *: "(\<lambda>f. f \<circ> (\<circ>) \<sigma>) \<in> tuples X \<rightarrow> tuples X" if \<sigma>: "\<sigma> permutes Roots" for \<sigma>
@@ -1127,8 +1214,20 @@ proof (rule ccontr)
       by (auto simp: fun_eq_iff o_def permutes_inverses[OF \<sigma>])
   qed
 
+  text \<open>
+    Next, we define the multiset of of possible exponents that we can get for a given
+    \<open>n!\<close>-multiset of roots,
+  \<close>
   define R :: "complex multiset \<Rightarrow> complex multiset" where
     "R = (\<lambda>X. image_mset (\<lambda>f. \<Sum>\<sigma>\<in>perms. \<sigma> (f \<sigma>)) (mset_set (tuples X)))"
+
+  text \<open>
+    We show that, for each such multiset, there is a content-free integer polynomial that has
+    exactly these exponents as roots. This shows that they form a full set of conjugates (but
+    note this polynomial is not necessarily squarefree).
+
+    The proof is yet another application of the fundamental theorem of symmetric polynomials.
+  \<close>
   obtain Q :: "complex multiset \<Rightarrow> int poly"
     where Q: "\<And>X. X \<in> Roots_ms \<Longrightarrow> poly_roots (of_int_poly (Q X)) = R X"
              "\<And>X. X \<in> Roots_ms \<Longrightarrow> content (Q X) = 1"
@@ -1137,10 +1236,9 @@ proof (rule ccontr)
       fix X :: "complex multiset"
       assume X: "X \<in> Roots_ms"
       define Q :: "complex poly mpoly" where
-        "Q = (\<Prod>f\<in>tuples X. Const [:0, 1:] - (\<Sum>\<sigma> | \<sigma> permutes {..<n}. Var (\<sigma> (unRoot (f (convert_perm \<sigma>))))))"
-
+        "Q = (\<Prod>f\<in>tuples X. Const [:0, 1:] -
+                 (\<Sum>\<sigma> | \<sigma> permutes {..<n}. Var (\<sigma> (unRoot (f (convert_perm \<sigma>))))))"
       define Q1 where "Q1 = (\<Prod>f\<in>tuples X. [:- (\<Sum>\<sigma> | \<sigma> permutes Roots. \<sigma> (f \<sigma>)), 1:])"
-
       define ratpolys :: "complex poly set" where "ratpolys = {p. \<forall>i. poly.coeff p i \<in> \<rat>}"
 
       have "insertion (\<lambda>x. [:Root x:]) Q \<in> ratpolys"
@@ -1268,6 +1366,10 @@ proof (rule ccontr)
     thus ?thesis using that by metis
   qed
 
+  text \<open>
+    We can now collect all the $e^{\sum \alpha_i}$ that happen to be equal and let the following
+    be their coefficients:
+  \<close>
   define \<beta>'' :: "int poly \<Rightarrow> int"
     where "\<beta>'' = (\<lambda>q. \<Sum>X\<in>Roots_ms. int (count (prime_factorization (Q X)) q) * (\<Prod>x\<in>#X. \<beta>' x))"
   have supp_\<beta>'': "{q. \<beta>'' q \<noteq> 0} \<subseteq> (\<Union>X\<in>Roots_ms. prime_factors (Q X))"
@@ -1381,6 +1483,10 @@ proof (rule ccontr)
       by auto
   qed
 
+  text \<open>
+    We are now ready for the final push: we start with the original sum that we know to be zero,
+    multiply it with the other permutations, and then multiply out the sum.
+  \<close>
   have "0 = (\<Sum>x\<in>X. \<beta> x * exp x)"
     using sum0 ..
   also have "\<dots> = (\<Sum>x\<in>Roots. \<beta>' x * exp x)"
@@ -1417,7 +1523,14 @@ proof (rule ccontr)
     by (simp only: R_def multiset.map_comp o_def sum_unfold_sum_mset)
   also have "\<dots> = (\<Sum>X\<in>Roots_ms. of_int (\<Prod>x\<in>#X. \<beta>' x) * (\<Sum>x\<in>#poly_roots (of_int_poly (Q X)). exp x))"
     by (intro sum.cong) (simp_all flip: Q)
-  also have "\<dots> = (\<Sum>X\<in>Roots_ms. (\<Sum>p. of_int (int (count (prime_factorization (Q X)) p) * (\<Prod>x\<in>#X. \<beta>' x)) * (\<Sum>x | ipoly p x = 0. exp x)))"
+
+  text \<open>
+    Our problem now is that the polynomials \<open>Q X\<close> can still contain multiple roots and that their
+    roots might not be disjoint. We therefore split them all into irreducible factors and collect
+    equal terms.
+  \<close>
+  also have "\<dots> = (\<Sum>X\<in>Roots_ms. (\<Sum>p. of_int (int (count (prime_factorization (Q X)) p) *
+                      (\<Prod>x\<in>#X. \<beta>' x)) * (\<Sum>x | ipoly p x = 0. exp x)))"
   proof (rule sum.cong, goal_cases)
     case (2 X)
     have "(\<Sum>x\<in>#poly_roots (of_int_poly (Q X) :: complex poly). exp x) =
@@ -1455,6 +1568,10 @@ proof (rule ccontr)
   finally have "(\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp (x :: complex))) = 0"
     by simp
 
+  text \<open>
+    We are now in the situation of our the specialised Hermite--Lindemann Theorem we proved
+    earlier and can easily derive a contradiction.
+  \<close>
   moreover have "(\<Sum>q | \<beta>'' q \<noteq> 0. of_int (\<beta>'' q) * (\<Sum>x | ipoly q x = 0. exp (x :: complex))) \<noteq> 0"
   proof (rule Hermite_Lindemann_aux1)
     show "finite {q. \<beta>'' q \<noteq> 0}"
@@ -1486,6 +1603,11 @@ qed
 
 subsection \<open>Removing the restriction to integer coefficients\<close>
 
+text \<open>
+  Next, we weaken the restriction that the $\beta_i$ must be integers to the restriction
+  that they must be rationals. This is done simply by multiplying with the least common multiple
+  of the demoninators.
+\<close>
 lemma Hermite_Lindemann_aux3:
   fixes X :: "complex set" and \<beta> :: "complex \<Rightarrow> rat"
   assumes "finite X"
@@ -1542,6 +1664,12 @@ proof -
   qed (use alg \<open>finite X\<close> in auto)
 qed
 
+text \<open>
+  Next, we weaken the restriction that the $\beta_i$ must be rational to them being algebraic.
+  Similarly to before, this is done by multiplying over all possible permutations of the $\beta_i$
+  (in some sense) to introduce more symmetry, from which it then follows by the fundamental theorem
+  of symmetric polynomials that the resulting coefficients are rational.
+\<close>
 lemma Hermite_Lindemann_aux4:
   fixes \<beta> :: "complex \<Rightarrow> complex"
   assumes [intro]: "finite X"
@@ -1554,6 +1682,12 @@ proof (rule ccontr)
   assume X: "X \<noteq> {}"
   note [intro!] = finite_PiE
 
+  text \<open>
+    We now take more or less the same approach as before, except that now we find a polynomial
+    that has all of the conjugates of the coefficients \<open>\<beta>\<close> as roots. Note that this is a slight
+    deviation from Baker's proof, who picks one polynomial for each \<open>\<beta>\<close> independently. I did it
+    this way because, as Bernard~\cite{bernard} observed, it makes the proof a bit easier.
+  \<close>
   define P :: "int poly" where "P = \<Prod>((min_int_poly \<circ> \<beta>) ` X)"
   define Roots :: "complex set" where "Roots = {x. ipoly P x = 0}"
   have "0 \<notin> Roots" using \<open>finite X\<close> alg2 nz
@@ -1573,13 +1707,33 @@ proof (rule ccontr)
       by (auto simp: Roots_def P_def of_int_poly_hom.hom_prod poly_prod)
   qed
 
+  have "squarefree (of_int_poly P :: complex poly)"
+    unfolding P_def of_int_poly_hom.hom_prod o_def
+  proof (rule squarefree_prod_coprime; safe)
+    fix x assume "x \<in> X"
+    thus "squarefree (of_int_poly (min_int_poly (\<beta> x)) :: complex poly)"
+      by (intro squarefree_of_int_polyI) auto
+  next
+    fix x y assume xy: "x \<in> X" "y \<in> X" "min_int_poly (\<beta> x) \<noteq> min_int_poly (\<beta> y)"
+    thus "Rings.coprime (of_int_poly (min_int_poly (\<beta> x)))
+            (of_int_poly (min_int_poly (\<beta> y)) :: complex poly)"
+      by (intro coprime_of_int_polyI[OF primes_coprime]) auto
+  qed
+
   define n where "n = card Roots"
   define m where "m = card X"
   have "Roots \<noteq> {}"
     using \<open>\<beta> ` X \<subseteq> Roots\<close> \<open>X \<noteq> {}\<close> by auto
   hence "n > 0" "m > 0"
     using \<open>finite Roots\<close> \<open>finite X\<close> \<open>X \<noteq> {}\<close> by (auto simp: n_def m_def)
+  have fin1 [simp]: "finite (X \<rightarrow>\<^sub>E Roots)"
+    by auto
+  have [simp]: "card (X \<rightarrow>\<^sub>E Roots) = n ^ m"
+    by (subst card_PiE) (auto simp: m_def n_def)
 
+  text \<open>
+    We again find a bijection between the roots and the natural numbers less than \<open>n\<close>:
+  \<close>
   obtain Root where Root: "bij_betw Root {..<n} Roots"
     using ex_bij_betw_nat_finite[OF \<open>finite Roots\<close>] unfolding n_def atLeast0LessThan by metis
   define unRoot :: "complex \<Rightarrow> nat" where "unRoot = inv_into {..<n} Root"
@@ -1594,33 +1748,21 @@ proof (rule ccontr)
   have [simp, intro]: "unRoot x < n" if "x \<in> Roots" for x
     using unRoot that by (auto simp: bij_betw_def)
 
-  have "squarefree (of_int_poly P :: complex poly)"
-    unfolding P_def of_int_poly_hom.hom_prod o_def
-  proof (rule squarefree_prod_coprime; safe)
-    fix x assume "x \<in> X"
-    thus "squarefree (of_int_poly (min_int_poly (\<beta> x)) :: complex poly)"
-      by (intro squarefree_of_int_polyI) auto
-  next
-    fix x y assume xy: "x \<in> X" "y \<in> X" "min_int_poly (\<beta> x) \<noteq> min_int_poly (\<beta> y)"
-    thus "Rings.coprime (of_int_poly (min_int_poly (\<beta> x)))
-            (of_int_poly (min_int_poly (\<beta> y)) :: complex poly)"
-      by (intro coprime_of_int_polyI[OF primes_coprime]) auto
-  qed
-
+  text \<open>
+    And we again define the set of multisets and tuples that we will get in the expanded product.
+  \<close>
   define Roots_ms :: "complex multiset set" where
     "Roots_ms = {Y. set_mset Y \<subseteq> X \<and> size Y = n ^ m}"
   have [intro]: "finite Roots_ms"
     unfolding Roots_ms_def by (rule finite_multisets_of_size) auto
   define tuples :: "complex multiset \<Rightarrow> ((complex \<Rightarrow> complex) \<Rightarrow> complex) set"
     where "tuples = (\<lambda>Y. {f\<in>(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X. image_mset f (mset_set (X \<rightarrow>\<^sub>E Roots)) = Y})"
-
-  have fin1 [simp]: "finite (X \<rightarrow>\<^sub>E Roots)"
-    by auto
   have [intro]: "finite (tuples Y)" for Y
     unfolding tuples_def by (rule finite_subset[of _ "(X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"]) auto
-  have [simp]: "card (X \<rightarrow>\<^sub>E Roots) = n ^ m"
-    by (subst card_PiE) (auto simp: m_def n_def)
 
+  text \<open>
+    We will also need to convert permutations over the natural and over the roots again.
+  \<close>
   define convert_perm :: "(nat \<Rightarrow> nat) \<Rightarrow> (complex \<Rightarrow> complex)" where
     "convert_perm = (\<lambda>\<sigma> x. if x \<in> Roots then Root (\<sigma> (unRoot x)) else x)"
   have bij_convert: "bij_betw convert_perm {\<sigma>. \<sigma> permutes {..<n}} {\<sigma>. \<sigma> permutes Roots}"
@@ -1628,11 +1770,10 @@ proof (rule ccontr)
   have permutes_convert_perm [intro]: "convert_perm \<sigma> permutes Roots" if "\<sigma> permutes {..<n}" for \<sigma>
     using that bij_convert unfolding bij_betw_def by blast
 
-  have bij_betw_compose_perm1:
-    "bij_betw (\<lambda>f. restrict (\<pi> \<circ> f) X) (X \<rightarrow>\<^sub>E Roots) (X \<rightarrow>\<^sub>E Roots)" if "\<pi> permutes Roots" for \<pi>
-    using that by (rule bij_betw_compose_left_perm_PiE)
-
-  have bij_betw_compose_perm2: 
+  text \<open>
+    We also need a small lemma showing that our tuples are stable under permutation of the roots.
+  \<close>
+  have bij_betw_compose_perm: 
     "bij_betw (\<lambda>f. restrict (\<lambda>g. f (restrict (\<pi> \<circ> g) X)) (X \<rightarrow>\<^sub>E Roots)) (tuples Y) (tuples Y)"
     if \<pi>: "\<pi> permutes Roots" and "Y \<in> Roots_ms" for \<pi> Y
   proof (rule bij_betwI)
@@ -1643,8 +1784,8 @@ proof (rule ccontr)
       hence f': "f \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"
         by (auto simp: tuples_def)
       define f' where "f' = (\<lambda>g. f (restrict (\<pi> \<circ> g) X))"
-      have "f' \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow> X"
-        unfolding f'_def using f' bij_betw_apply[OF bij_betw_compose_perm1[OF \<pi>]] by blast
+      have "f' \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow> X" unfolding f'_def
+        using f' bij_betw_apply[OF bij_betw_compose_left_perm_PiE[OF \<pi>, of X]] by blast
       hence "restrict f' (X \<rightarrow>\<^sub>E Roots) \<in> (X \<rightarrow>\<^sub>E Roots) \<rightarrow>\<^sub>E X"
         by simp
       moreover have "image_mset (restrict f' (X \<rightarrow>\<^sub>E Roots)) (mset_set (X \<rightarrow>\<^sub>E Roots)) = Y"
@@ -1691,8 +1832,13 @@ proof (rule ccontr)
       using *[OF that permutes_inv[OF \<pi>]] permutes_inv_inv[OF \<pi>] by simp
   qed
 
+  text \<open>
+    We show that the coefficients in the expanded new sum are rational -- again using the 
+    fundamental theorem of symmetric polynomials.
+  \<close>
   define \<beta>' :: "complex multiset \<Rightarrow> complex"
     where "\<beta>' = (\<lambda>Y. \<Sum>f\<in>tuples Y. \<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. g (f g))"
+
   have "\<beta>' Y \<in> \<rat>" if Y: "Y \<in> Roots_ms" for Y
   proof -
     define Q :: "complex mpoly"
@@ -1722,12 +1868,12 @@ proof (rule ccontr)
             using 2 by (auto simp: tuples_def)
           have "(\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (\<pi> (unRoot (g (f g))))) =
                 (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (\<pi> (unRoot (restrict (\<pi>' \<circ> g) X (f (restrict (\<pi>' \<circ> g) X))))))"
-            using \<pi>' by (intro prod.reindex_bij_betw [symmetric] bij_betw_compose_perm1)
+            using \<pi>' by (intro prod.reindex_bij_betw [symmetric] bij_betw_compose_left_perm_PiE)
           also have "\<dots> = (\<Prod>g\<in>X \<rightarrow>\<^sub>E Roots. Var (unRoot (g (f (restrict (\<pi>' \<circ> g) X)))))"
           proof (intro prod.cong refl arg_cong[of _ _ Var])
             fix g assume g: "g \<in> X \<rightarrow>\<^sub>E Roots"
             have "restrict (\<pi>' \<circ> g) X \<in> X \<rightarrow>\<^sub>E Roots"
-              using bij_betw_compose_perm1[OF \<pi>'] g unfolding bij_betw_def by blast
+              using bij_betw_compose_left_perm_PiE[OF \<pi>', of X] g unfolding bij_betw_def by blast
             hence *: "f (restrict (\<pi>' \<circ> g) X) \<in> X"
               by (rule PiE_mem[OF f])
             hence **: "g (f (restrict (\<pi>' \<circ> g) X)) \<in> Roots"
@@ -1752,7 +1898,7 @@ proof (rule ccontr)
           by (intro sum.cong prod.cong refl) auto
         also have "\<dots> = Q"
           unfolding Q_def
-          by (rule sum.reindex_bij_betw[OF bij_betw_compose_perm2]) (use \<pi>' Y in simp_all)
+          by (rule sum.reindex_bij_betw[OF bij_betw_compose_perm]) (use \<pi>' Y in simp_all)
         finally show "mpoly_map_vars \<pi> Q = Q" .
       qed
     next
@@ -1787,10 +1933,18 @@ proof (rule ccontr)
     where \<beta>'': "\<And>Y. Y \<in> Roots_ms \<Longrightarrow> \<beta>' Y = of_rat (\<beta>'' Y)"
     by metis
 
+  text \<open>
+    We again collect all the terms that happen to have equal exponents and call their
+    coefficients \<open>\<beta>''\<close>:
+  \<close>
   define \<beta>''' :: "complex \<Rightarrow> rat" where "\<beta>''' = (\<lambda>\<alpha>. \<Sum>Y\<in>Roots_ms. (\<beta>'' Y when \<Sum>\<^sub>#Y = \<alpha>))"
   have supp_\<beta>''': "{x. \<beta>''' x \<noteq> 0} \<subseteq> sum_mset ` Roots_ms"
     by (auto simp: \<beta>'''_def when_def elim!: sum.not_neutral_contains_not_neutral split: if_splits)
-  
+
+  text \<open>
+    We again start with the sum that we now to be zero and multiply it with all the sums that can
+    be obtained with different choices for the roots.
+  \<close>
   have "0 = (\<Sum>x\<in>X. \<beta> x * exp x)"
     using sum0 ..
   also have "\<dots> = (\<Sum>x\<in>X. restrict \<beta> X x * exp x)"
@@ -1826,6 +1980,10 @@ proof (rule ccontr)
   finally have "(\<Sum>\<alpha> | \<beta>''' \<alpha> \<noteq> 0. of_rat (\<beta>''' \<alpha>) * exp \<alpha>) = 0"
     by auto
 
+  text \<open>
+    We are now in the situation of our previous version of the theorem and can apply it to find
+    that all the coefficients are zero.
+  \<close>
   have "{\<alpha>. \<beta>''' \<alpha> \<noteq> 0} = {}"
   proof (rule Hermite_Lindemann_aux3)
     show "finite {\<alpha>. \<beta>''' \<alpha> \<noteq> 0}"
@@ -1841,6 +1999,12 @@ proof (rule ccontr)
       by (auto simp: Roots_ms_def)
   qed auto
 
+  text \<open>
+    However, similarly to before, we can show that the coefficient corresponding to the
+    term with the lexicographically greatest exponent (which is obtained by picking the
+    term with the lexicographically greatest term in each of the factors of our big product)
+    is non-zero.
+  \<close>
   moreover have "\<exists>\<alpha>. \<beta>''' \<alpha> \<noteq> 0"
   proof -
     define \<alpha>_max where "\<alpha>_max = complex_lex.Max X"
@@ -1887,10 +2051,10 @@ proof (rule ccontr)
       have "sum_mset Y = y + sum_mset (Y - {#y#})"
         by (subst *) auto
       also have "\<dots> <\<^sub>\<complex> \<alpha>_max + sum_mset (Y - {#y#})"
-        by (intro add_strict_right_mono_complex_lex) fact
+        by (intro complex_lex.add_strict_right_mono) fact
       also have "\<dots> \<le>\<^sub>\<complex> \<alpha>_max + sum_mset (replicate_mset (n ^ m - 1) \<alpha>_max)"
         unfolding \<alpha>_max_def using that y \<open>set_mset (Y - {#y#}) \<subseteq> X\<close>
-        by (intro add_left_mono_complex_lex sum_mset_mono_complex_lex
+        by (intro complex_lex.add_left_mono sum_mset_mono_complex_lex
                   rel_mset_replicate_mset_right complex_lex.Max_ge)
            (auto simp: Roots_ms_def size_Diff_singleton)
       also have "\<dots> = of_nat (Suc (n ^ m - 1)) * \<alpha>_max"
@@ -1917,6 +2081,9 @@ proof (rule ccontr)
   ultimately show False by blast
 qed
 
+text \<open>
+  We now additionally allow some of the $\beta_i$ to be zero:
+\<close>
 lemma Hermite_Lindemann':
   fixes \<beta> :: "complex \<Rightarrow> complex"
   assumes [intro]: "finite X"
@@ -1936,6 +2103,10 @@ proof -
   thus ?thesis by blast
 qed
 
+text \<open>
+  Lastly, we switch to indexed summation in order to obtain a version of the theorem that
+  is somewhat nicer to use:
+\<close>
 theorem Hermite_Lindemann:
   fixes \<alpha> \<beta> :: "'a \<Rightarrow> complex"
   assumes [intro]: "finite I"
@@ -1961,12 +2132,16 @@ proof -
   thus ?thesis by auto
 qed
 
+text \<open>
+  The following version using lists instead of sequences is even more convenient to use
+  in practice:
+\<close>
 corollary Hermite_Lindemann_list:
   fixes xs :: "(complex \<times> complex) list"
   assumes alg:      "\<forall>(x,y)\<in>set xs. algebraic x \<and> algebraic y"
   assumes distinct: "distinct (map snd xs)"
-  assumes sum0: "(\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>) = 0"
-  shows   "\<forall>c\<in>fst`set xs. c = 0"
+  assumes sum0:     "(\<Sum>(c,\<alpha>)\<leftarrow>xs. c * exp \<alpha>) = 0"
+  shows   "\<forall>c\<in>(fst ` set xs). c = 0"
 proof -
   define n where "n = length xs"
   have *: "\<forall>i\<in>{..<n}. fst (xs ! i) = 0"
@@ -2003,11 +2178,21 @@ qed
 
 subsection \<open>Simple corollaries\<close>
 
+text \<open>
+  Now, we derive all the usual obvious corollaries of the theorem in the obvious way.
+
+  First, the exponential of a non-zero algebraic number is transcendental.
+\<close>
 corollary algebraic_exp_complex_iff:
   assumes "algebraic x"
   shows   "algebraic (exp x :: complex) \<longleftrightarrow> x = 0"
   using Hermite_Lindemann_list[of "[(1, x), (-exp x, 0)]"] assms by auto
 
+text \<open>
+  More generally, any sum of exponentials with algebraic coefficients and exponents is
+  transcendental if the exponents are all distinct and non-zero and at least one coefficient
+  is non-zero.
+\<close>
 corollary sum_of_exp_transcendentalI:
   fixes xs :: "(complex \<times> complex) list"
   assumes "\<forall>(x,y)\<in>set xs. algebraic x \<and> algebraic y \<and> y \<noteq> 0"
@@ -2026,35 +2211,44 @@ proof
     by auto
 qed
 
+text \<open>
+  Any complex logarithm of an algebraic number other than 1 is transcendental
+  (no matter which branch cut).
+\<close>
 corollary transcendental_complex_logarithm:
   assumes "algebraic x" "exp y = (x :: complex)" "x \<noteq> 1"
   shows   "\<not>algebraic y"
   using algebraic_exp_complex_iff[of y] assms by auto
 
+text \<open>
+  In particular, this holds for the standard branch of the logarithm.
+\<close>
 corollary transcendental_Ln:
   assumes "algebraic x" "x \<noteq> 0" "x \<noteq> 1"
   shows   "\<not>algebraic (Ln x)"
   by (rule transcendental_complex_logarithm) (use assms in auto)
 
+text \<open>
+  The transcendence of \<open>e\<close> and \<open>\<pi>\<close>, which I have already formalised directly in other AFP
+  entries, now follows as a simple corollary.
+\<close>
 corollary exp_1_complex_transcendental: "\<not>algebraic (exp 1 :: complex)"
   by (subst algebraic_exp_complex_iff) auto
 
 corollary pi_transcendental: "\<not>algebraic pi"
-proof
-  assume "algebraic pi"
-  hence "algebraic (of_real pi)"
-    by (simp only: algebraic_of_real_iff)
-  hence "algebraic (\<i> * of_real pi)"
-    by (intro algebraic_times) auto
-  hence "\<not>algebraic (exp (\<i> * of_real pi))"
-    by (subst algebraic_exp_complex_iff) auto
-  also have "exp (\<i> * of_real pi) = -1"
-    by (rule exp_pi_i')
-  finally show False by simp
+proof -
+  have "\<not>algebraic (\<i> * pi)"
+    by (rule transcendental_complex_logarithm[of "-1"]) auto
+  thus ?thesis by simp
 qed
 
 
 subsection \<open>Transcendence of the trigonometric and hyperbolic functions\<close>
+
+text \<open>
+  In a similar fashion, we can also prove the transcendence of all the trigonometric and
+  hyperbolic functions such as $\sin$, $\tan$, $\sinh$, $\arcsin$, etc.
+\<close>
 
 lemma transcendental_sinh:
   assumes "algebraic z" "z \<noteq> 0"
@@ -2088,27 +2282,16 @@ lemma transcendental_cos:
   shows   "\<not>algebraic (cos z :: complex)"
   unfolding cos_conv_cosh using transcendental_cosh[of "\<i> * z"] assms by simp
 
-lemma tan_square_eq_neg1D:
-  assumes "tan (z :: complex) ^ 2 = -1"
-  shows "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))"
-proof -
-  from assms have "sin z ^ 2 = -(cos z ^ 2)" "cos z \<noteq> 0"
+(* TODO: Move? *)
+lemma tan_square_neq_neg1: "tan (z :: complex) ^ 2 \<noteq> -1"
+proof
+  assume "tan z ^ 2 = -1"
+  hence "sin z ^ 2 = -(cos z ^ 2)"
     by (auto simp: tan_def divide_simps split: if_splits)
-  note this(1)
   also have "cos z ^ 2 = 1 - sin z ^ 2"
     by (simp add: cos_squared_eq)
-  finally have "1 - 2 * sin z ^ 2 = 0"
+  finally show False
     by simp
-  also have "1 - 2 * sin z ^ 2 = cos (2 * z)"
-    by (simp add: cos_double_sin)
-  finally have "cos (2 * z) = 0" .
-  then obtain n where "2 * z = complex_of_real (real_of_int n * pi) + complex_of_real pi / 2"
-    unfolding cos_eq_0 by blast
-  also have "\<dots> = (of_int n + 1/2) * pi"
-    by (simp add: ring_distribs)
-  finally have z: "z = (of_int n + 1/2) * pi / 2"
-    by (simp add: mult_ac)
-  thus "(\<exists>n. z = of_real ((of_int n + 1 / 2) * pi / 2))" ..
 qed
 
 lemma transcendental_tan:
@@ -2127,19 +2310,8 @@ proof
       by auto
   qed
 
-  have ne_neg1: "tan z ^ 2 \<noteq> -1"
-  proof
-    assume "tan z ^ 2 = -1"
-    then obtain n where "z = of_real ((of_int n + 1 / 2) * pi / 2)"
-      using tan_square_eq_neg1D[of z] by blast
-    also have "algebraic \<dots> \<longleftrightarrow> algebraic ((real_of_int n + 1 / 2) * pi / 2)"
-      by (rule algebraic_of_real_iff)
-    also have  "\<not>algebraic ((real_of_int n + 1 / 2) * pi / 2)"
-      using nz1[of n] transcendental_pi by simp
-    finally show False using assms(1) by contradiction
-  qed
-  hence nz2: "1 + tan z ^ 2 \<noteq> 0"
-    by (subst add_eq_0_iff)
+  have nz2: "1 + tan z ^ 2 \<noteq> 0"
+    using tan_square_neq_neg1[of z] by (subst add_eq_0_iff) 
 
   have nz3: "cos z \<noteq> 0"
   proof

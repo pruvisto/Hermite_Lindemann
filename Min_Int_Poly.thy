@@ -1,3 +1,7 @@
+(*
+  File:     Min_Int_Poly.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>The minimal polynomial of an algebraic number\<close>
 theory Min_Int_Poly
 imports
@@ -5,6 +9,14 @@ imports
   "HOL-Computational_Algebra.Computational_Algebra"
   More_Polynomial_HLW
 begin
+
+text \<open>
+  Given an algebraic number \<open>x\<close> in a field, the minimal polynomial is the unique irreducible
+  integer polynomial with positive leading coefficient that has \<open>x\<close> as a root.
+
+  Note that we assume characteristic 0 since the material upon which all of this builds also
+  assumes it.
+\<close>
 
 (* TODO Move *)
 

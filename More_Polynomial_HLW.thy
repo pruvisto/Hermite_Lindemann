@@ -1,3 +1,7 @@
+(*
+  File:     More_Polynomial_HLW.thy
+  Author:   Manuel Eberl, TU München
+*)
 section \<open>Auxiliary facts about univariate polynomials\<close>
 theory More_Polynomial_HLW
 imports
