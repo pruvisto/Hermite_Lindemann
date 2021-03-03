@@ -2081,6 +2081,9 @@ proof (rule ccontr)
   ultimately show False by blast
 qed
 
+
+subsection \<open>The final theorem\<close>
+
 text \<open>
   We now additionally allow some of the $\beta_i$ to be zero:
 \<close>
